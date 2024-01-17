@@ -49,14 +49,12 @@ void process_command (char ** pp_args)
     {
         if (-1 == execvp(pp_args[0], pp_args))
         {
-            perror("execvp");
-            exit(1);
+            error_message();
         }
     }
     else if (0 > pid)
     {
-        perror("fork");
-        exit(1);
+        error_message();
     }
     else
     {
@@ -92,6 +90,12 @@ static int compare(const char * p_str1, const char * p_str2)
     }
 }
 
+static void error_message()
+{
+    char error_message[30] = "An error has occurred\n"; 
+    write(STDERR_FILENO, error_message, strlen(error_message));
+}
+
 int main (int argc, char * argv[])
 {
     char      input[MAX_INPUT] = { 0 };
@@ -108,37 +112,44 @@ int main (int argc, char * argv[])
             exit(1);
         }
     }
-
-    while(1)
+    else if (1 == argc)
     {
-        if (1 == argc)
+        while(1)
         {
-            printf("\nwish> ");
-            if (NULL == fgets(input, MAX_INPUT, stdin))
+            if (1 == argc)
+            {
+                printf("\nwish> ");
+                if (NULL == fgets(input, MAX_INPUT, stdin))
+                {
+                    break;
+                }
+            }
+            else
+            {
+                if (NULL == fgets(input, MAX_INPUT, p_batch))
+                {
+                    break;
+                }
+            }
+
+            if ('\n' == input[strlen(input) - 1])
+            {
+                input[strlen(input) - 1] = '\0';
+            }
+
+            if (0 == compare(input, "exit"))
             {
                 break;
             }
-        }
-        else
-        {
-            if (NULL == fgets(input, MAX_INPUT, p_batch))
-            {
-                break;
-            }
-        }
 
-        if ('\n' == input[strlen(input) - 1])
-        {
-            input[strlen(input) - 1] = '\0';
+            parse_input(input, p_args, &arg_count);
+            process_command(p_args);
         }
-
-        if (0 == compare(input, "exit"))
-        {
-            break;
-        }
-
-        parse_input(input, p_args, &arg_count);
-        process_command(p_args);
+    }
+    else
+    {
+        error_message();
+        exit(1);
     }
 
     if (NULL != p_batch)
