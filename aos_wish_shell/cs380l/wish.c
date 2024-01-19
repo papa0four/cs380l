@@ -114,7 +114,6 @@ void execute_builtins (const char * p_command, char ** pp_args, char ** pp_paths
         if (NULL != pp_args[1])
         {
             handle_error(NULL);
-            exit(1);
         }
 
         exit(0);
@@ -128,13 +127,17 @@ void execute_builtins (const char * p_command, char ** pp_args, char ** pp_paths
                 handle_error(NULL);
             }
         }
+        else
+        {
+            handle_error(NULL);
+        }
     }
     else if (0 == compare(p_command, built_in_commands[2]))
     {
-        for (int i = 0; NULL != pp_paths; i++)
-        {
-            CLEAR(pp_paths[i]);
-        }
+        // for (int i = 0; NULL != pp_paths; i++)
+        // {
+        //     CLEAR(pp_paths[i]);
+        // }
 
         int i = 0;
         while (NULL != pp_args[i + 1])
@@ -214,9 +217,13 @@ void process_command (char * p_input, char ** pp_paths)
         }
         else
         {
-            printf("found: %s\n", 1 == cmd_found ? "True" : "False");
             handle_error(NULL);
         }
+    }
+
+    for (int i = 0; (i < MAX_ARGS) && (NULL != pp_args[i]); i++)
+    {
+        CLEAR(pp_args[i]);
     }
 }
 
@@ -254,7 +261,8 @@ int main (int argc, char * argv[])
         {
             printf("\nwish> ");
             ssize_t bytes_read = getline(&p_input, &input_sz, stdin);
-            if (-1 == bytes_read)
+            if ((-1 == bytes_read) ||
+                (feof(stdin)))
             {
                 break;
             }
@@ -272,13 +280,14 @@ int main (int argc, char * argv[])
         else
         {
             handle_error(NULL);
-            break;
         }
 
         process_command(p_input, pp_dirs);
     }
 
     close_file(p_batch);
+
+    CLEAR(p_input);
     
     for (int i = 0; NULL != pp_dirs[i]; i++)
     {
