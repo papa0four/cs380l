@@ -30,6 +30,7 @@ repo for advanced operating systems UT Austin
   5. If you wish to only maintain one local copy of the code at all times, simply move all relevant files and directories to the cs380l directory
      - **NOTE** if you choose this option, ensure your *Makefile* and all test directories are set up to handle the new file structure for building and testing
   6. Once cloned, ensure all relevant files exist within your local VSCode environment and dev away!
+  7. if not you can always try to perform a `git pull`
 
 ## push your code
   1. once you have created a branch and modified the code, you are ready to push it to your branch repository
