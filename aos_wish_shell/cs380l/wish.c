@@ -120,6 +120,7 @@ void execute_builtins (const char * p_command, char ** pp_args, char ** pp_paths
         {
             CLEAR(pp_args[i]);
         }
+        printf("pp_args: %p\n", (void *)pp_args);
     }
     else if (0 == compare(p_command, built_in_commands[1]))
     {
@@ -175,8 +176,42 @@ void process_command (char * p_input, char ** pp_paths)
 {
     param_check(__FILE__, __LINE__, ARG_2, p_input, pp_paths);
 
-    char * pp_args[MAX_ARGS] = { 0 };
+    char ** pp_args = calloc(MAX_ARGS, sizeof(char *));
+    if (NULL == pp_args)
+    {
+        handle_error(NULL);
+        exit(1);
+    }
+
     parse_input(p_input, pp_args);
+
+    int redirect_output = 0;
+    char * p_out_file = NULL;
+
+    for (int i = 0; NULL != pp_args[i]; i++)
+    {
+        if (0 == compare(pp_args[i], ">"))
+        {
+            if (NULL != pp_args[i + 1])
+            {
+                size_t filename_len = getlen(pp_args[i + 1]);
+                p_out_file = copy(pp_args[i + 1], filename_len);
+                redirect_output = 1;
+                pp_args[i] = NULL;
+            }
+            else
+            {
+                handle_error(NULL);
+                for (int j = 0; j < i; j++)
+                {
+                    CLEAR(pp_args[j]);
+                }
+
+                CLEAR(pp_args);
+                return;
+            }
+        }
+    }
 
     if (is_built_in(pp_args[0]))
     {
@@ -203,6 +238,19 @@ void process_command (char * p_input, char ** pp_paths)
             pid_t pid = fork();
             if (0 == pid)
             {
+                if (redirect_output)
+                {
+                    int fd = open(p_out_file, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+                    if (-1 == fd)
+                    {
+                        handle_error(NULL);
+                        exit(1);
+                    }
+                    dup2(fd, STDOUT_FILENO);
+                    dup2(fd, STDERR_FILENO);
+                    close(fd);
+                }
+
                 if (-1 == execv(cmd_path, pp_args))
                 {
                     handle_error(NULL);
@@ -222,12 +270,21 @@ void process_command (char * p_input, char ** pp_paths)
         {
             handle_error(NULL);
         }
+
+        if (redirect_output)
+        {
+            if (NULL != p_out_file)
+            {
+                CLEAR(p_out_file);
+            }
+        }
     }
 
     for (int i = 0; (i < MAX_ARGS) && (NULL != pp_args[i]); i++)
     {
         CLEAR(pp_args[i]);
     }
+    CLEAR(pp_args);
 }
 
 int main (int argc, char * argv[])
@@ -238,9 +295,9 @@ int main (int argc, char * argv[])
         exit(1);
     }
 
-    char * p_input           = NULL;
-    size_t input_sz          = 0;
-    char * pp_dirs[MAX_ARGS] = { 0 };
+    char    * p_input           = 0;
+    size_t    input_sz          = 0;
+    char    * pp_dirs[MAX_ARGS] = { 0 };
     
     size_t dirlen   = getlen("/bin");
     pp_dirs[0]      = copy("/bin", dirlen);
@@ -291,6 +348,8 @@ int main (int argc, char * argv[])
         {
             break;
         }
+
+        CLEAR(p_input);
     }
 
     close_file(p_batch);

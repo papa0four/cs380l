@@ -9,6 +9,7 @@
 #include <errno.h>
 #include <stdarg.h>
 #include <stdint.h>
+#include <fcntl.h>
 
 #define ARG_1   1
 #define ARG_2   2
@@ -46,12 +47,12 @@ int
 is_built_in (const char * p_command);
 
 void
-execute_builtins (const char * p_command, char ** pp_args, char ** pp_paths);
+execute_builtins(const char *p_command, char **pp_args, char **pp_paths);
 
 void
 parse_input (char * p_input, char ** pp_paths);
 
 void
-process_command (char * p_input, char ** pp_paths);
+process_cmd (char * p_input, char ** pp_paths);
 
 #endif
