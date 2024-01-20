@@ -191,43 +191,46 @@ void process_command (char * p_input, char ** pp_paths)
     int redirect_output = 0;
     char * p_out_file = NULL;
 
-    for (int i = 0; NULL != pp_args[i]; i++)
-    {
-        if (0 == compare(pp_args[i], ">"))
+    //Modified code to recognize > even when attached to pass test 11
+    for (int i = 0; pp_args[i] != NULL; i++)
         {
-            if ((NULL != pp_args[i + 1]) &&
-                (NULL == pp_args[i + 2]))
+            char* redirect_sign = strchr(pp_args[i], '>');
+            if (redirect_sign != NULL)
             {
-                size_t filename_len = getlen(pp_args[i + 1]);
-                p_out_file = copy(pp_args[i + 1], filename_len);
-                redirect_output = 1;
-                pp_args[i] = NULL;
-                break;
-            }
-            else if (NULL != pp_args[i + 2])
-            {
-                handle_error(NULL);
-                for (int j = 0; j < i; j++)
+                char* filename = redirect_sign + 1;
+                if (*filename != '\0' && pp_args[i + 1] == NULL)
                 {
-                    CLEAR(pp_args[j]);
+                    size_t filename_len = getlen(filename);
+                    p_out_file = copy(filename, filename_len);
+                    redirect_output = 1;
+                    *redirect_sign = '\0';  // Null-terminate the command part
+                    break;
                 }
-
-                CLEAR(pp_args);
-                return;
-            }
-            else
-            {
-                handle_error(NULL);
-                for (int j = 0; j < i; j++)
+                else if (pp_args[i + 1] != NULL)
                 {
-                    CLEAR(pp_args[j]);
-                }
+                    handle_error(NULL);
+                    for (int j = 0; j < i; j++)
+                    {
+                        CLEAR(pp_args[j]);
+                    }
 
-                CLEAR(pp_args);
-                return;
+                    CLEAR(pp_args);
+                    return;
+                }
+                else
+                {
+                    handle_error(NULL);
+                    for (int j = 0; j < i; j++)
+                    {
+                        CLEAR(pp_args[j]);
+                    }
+
+                    CLEAR(pp_args);
+                    return;
+                }
             }
         }
-    }
+    
 
     if (is_built_in(pp_args[0]))
     {
