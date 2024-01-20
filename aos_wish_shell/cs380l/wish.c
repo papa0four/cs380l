@@ -82,7 +82,7 @@ static char * copy (const char * p_data, size_t length)
 {
     param_check(__FILE__, __LINE__, ARG_1, p_data);
 
-    char * p_new = calloc((length + 1), sizeof (char));
+    char * p_new = calloc((length + 1), sizeof(char));
     if (NULL == p_new)
     {
         handle_error(NULL);
@@ -116,7 +116,10 @@ void execute_builtins (const char * p_command, char ** pp_args, char ** pp_paths
             handle_error(NULL);
         }
 
-        exit(0);
+        for (int i = 0; (i < MAX_ARGS) && (NULL != pp_args[i]); i++)
+        {
+            CLEAR(pp_args[i]);
+        }
     }
     else if (0 == compare(p_command, built_in_commands[1]))
     {
@@ -134,15 +137,15 @@ void execute_builtins (const char * p_command, char ** pp_args, char ** pp_paths
     }
     else if (0 == compare(p_command, built_in_commands[2]))
     {
-        // for (int i = 0; NULL != pp_paths; i++)
-        // {
-        //     CLEAR(pp_paths[i]);
-        // }
+        for (int i = 0; NULL != pp_paths[i]; i++)
+        {
+            CLEAR(pp_paths[i]);
+        }
 
         int i = 0;
         while (NULL != pp_args[i + 1])
         {
-            size_t arg_sz = getlen(pp_args[i]);
+            size_t arg_sz = getlen(pp_args[i + 1]);
             pp_paths[i] = copy(pp_args[i + 1], arg_sz);
             i++;
         }
@@ -172,7 +175,7 @@ void process_command (char * p_input, char ** pp_paths)
 {
     param_check(__FILE__, __LINE__, ARG_2, p_input, pp_paths);
 
-    char * pp_args[MAX_ARGS]    = { 0 };
+    char * pp_args[MAX_ARGS] = { 0 };
     parse_input(p_input, pp_args);
 
     if (is_built_in(pp_args[0]))
@@ -235,13 +238,13 @@ int main (int argc, char * argv[])
         exit(1);
     }
 
-    char * p_input = NULL;
-    size_t input_sz = 0;
-    char * pp_dirs[MAX_ARGS];
+    char * p_input           = NULL;
+    size_t input_sz          = 0;
+    char * pp_dirs[MAX_ARGS] = { 0 };
     
-    size_t dirlen = getlen("/bin");
-    pp_dirs[0] = copy("/bin", dirlen);
-    pp_dirs[1] = NULL;
+    size_t dirlen   = getlen("/bin");
+    pp_dirs[0]      = copy("/bin", dirlen);
+    pp_dirs[1]      = NULL;
 
     FILE * p_batch = NULL;
     if (2 == argc)
@@ -283,6 +286,11 @@ int main (int argc, char * argv[])
         }
 
         process_command(p_input, pp_dirs);
+
+        if (0 == compare(p_input, built_in_commands[0]))
+        {
+            break;
+        }
     }
 
     close_file(p_batch);
