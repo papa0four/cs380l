@@ -64,7 +64,10 @@ static int compare(const char * p_str1, const char * p_str2)
 
 int is_built_in (const char * p_command)
 {
-    param_check(__FILE__, __LINE__, ARG_1, p_command);
+    if (NULL == p_command)
+    {
+        return 0;
+    }
 
     size_t cmd_sz = sizeof(built_in_commands) / sizeof(built_in_commands[0]);
     for (int i = 0; i < cmd_sz; i++)
@@ -120,7 +123,6 @@ void execute_builtins (const char * p_command, char ** pp_args, char ** pp_paths
         {
             CLEAR(pp_args[i]);
         }
-        printf("pp_args: %p\n", (void *)pp_args);
     }
     else if (0 == compare(p_command, built_in_commands[1]))
     {
@@ -170,6 +172,7 @@ void parse_input (char * p_input, char ** pp_args)
     }
 
     pp_args[i] = NULL;
+    CLEAR(p_token);
 }
 
 void process_command (char * p_input, char ** pp_paths)
@@ -192,12 +195,25 @@ void process_command (char * p_input, char ** pp_paths)
     {
         if (0 == compare(pp_args[i], ">"))
         {
-            if (NULL != pp_args[i + 1])
+            if ((NULL != pp_args[i + 1]) &&
+                (NULL == pp_args[i + 2]))
             {
                 size_t filename_len = getlen(pp_args[i + 1]);
                 p_out_file = copy(pp_args[i + 1], filename_len);
                 redirect_output = 1;
                 pp_args[i] = NULL;
+                break;
+            }
+            else if (NULL != pp_args[i + 2])
+            {
+                handle_error(NULL);
+                for (int j = 0; j < i; j++)
+                {
+                    CLEAR(pp_args[j]);
+                }
+
+                CLEAR(pp_args);
+                return;
             }
             else
             {
