@@ -161,18 +161,27 @@ void parse_input (char * p_input, char ** pp_args)
     param_check(__FILE__, __LINE__, ARG_2, p_input, pp_args);
 
     char * p_token  = strtok(p_input, " \t\n");
-    int i = 0;
+    int i           = 0;
+
     while ((NULL != p_token) &&
         ((MAX_ARGS - 1) > i))
     {
         size_t token_sz = getlen(p_token);
         pp_args[i] = copy(p_token, token_sz);
+        if (NULL == pp_args[i])
+        {
+            for (int j = 0; j < i; j++)
+            {
+                CLEAR(pp_args[j]);
+            }
+            return;
+        }
+
         i++;
         p_token = strtok(NULL, " \t\n");
     }
 
     pp_args[i] = NULL;
-    CLEAR(p_token);
 }
 
 void process_command (char * p_input, char ** pp_paths)
@@ -188,8 +197,8 @@ void process_command (char * p_input, char ** pp_paths)
 
     parse_input(p_input, pp_args);
 
-    int redirect_output = 0;
-    char * p_out_file = NULL;
+    int     redirect_output     = 0;
+    char  * p_out_file          = NULL;
 
     for (int i = 0; NULL != pp_args[i]; i++)
     {
@@ -201,10 +210,10 @@ void process_command (char * p_input, char ** pp_paths)
                 size_t filename_len = getlen(pp_args[i + 1]);
                 p_out_file = copy(pp_args[i + 1], filename_len);
                 redirect_output = 1;
-                pp_args[i] = NULL;
                 break;
             }
-            else if (NULL != pp_args[i + 2])
+            else if ((NULL != pp_args[i + 2]) ||
+                    (NULL == pp_args[i + 1]))
             {
                 handle_error(NULL);
                 for (int j = 0; j < i; j++)
@@ -213,6 +222,7 @@ void process_command (char * p_input, char ** pp_paths)
                 }
 
                 CLEAR(pp_args);
+                CLEAR(p_out_file);
                 return;
             }
             else
@@ -224,6 +234,7 @@ void process_command (char * p_input, char ** pp_paths)
                 }
 
                 CLEAR(pp_args);
+                CLEAR(p_out_file);
                 return;
             }
         }
@@ -286,13 +297,13 @@ void process_command (char * p_input, char ** pp_paths)
         {
             handle_error(NULL);
         }
+    }
 
-        if (redirect_output)
+    if (redirect_output)
+    {
+        if (NULL != p_out_file)
         {
-            if (NULL != p_out_file)
-            {
-                CLEAR(p_out_file);
-            }
+            CLEAR(p_out_file);
         }
     }
 
@@ -362,6 +373,7 @@ int main (int argc, char * argv[])
 
         if (0 == compare(p_input, built_in_commands[0]))
         {
+            CLEAR(p_input);
             break;
         }
 
@@ -370,7 +382,10 @@ int main (int argc, char * argv[])
 
     close_file(p_batch);
 
-    CLEAR(p_input);
+    if (NULL != p_input)
+    {
+        CLEAR(p_input);
+    }
     
     for (int i = 0; NULL != pp_dirs[i]; i++)
     {
