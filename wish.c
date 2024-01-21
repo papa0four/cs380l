@@ -191,7 +191,7 @@ void process_command (char * p_input, char ** pp_paths)
     int redirect_output = 0;
     char * p_out_file = NULL;
 
-    //Modified code to recognize > even when attached to pass test 11
+    //MODIFIED CODE TO RECOGNIZE > EVEN WHEN ATTACHED TO OTHER WORDS TO PASS TEST 11
     for (int i = 0; pp_args[i] != NULL; i++)
         {
             char* redirect_sign = strchr(pp_args[i], '>');
@@ -231,6 +231,10 @@ void process_command (char * p_input, char ** pp_paths)
             }
         }
     
+    if (pp_args[0] == NULL) //HANDLE NULL COMMANDS FOR TEST 15
+    {
+        return;
+    }
 
     if (is_built_in(pp_args[0]))
     {

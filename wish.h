@@ -10,6 +10,7 @@
 #include <stdarg.h>
 #include <stdint.h>
 #include <fcntl.h>
+#include <ctype.h>
 
 #define ARG_1   1
 #define ARG_2   2
