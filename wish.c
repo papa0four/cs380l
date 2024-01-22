@@ -123,6 +123,11 @@ void execute_builtins (const char * p_command, char ** pp_args, char ** pp_paths
         {
             CLEAR(pp_args[i]);
         }
+        for (int i = 0; (i < MAX_ARGS) && (NULL != pp_paths[i]); i++)
+        {
+            CLEAR(pp_paths[i]);
+        }
+        exit(0);
     }
     else if (0 == compare(p_command, built_in_commands[1]))
     {
@@ -160,25 +165,38 @@ void parse_input (char * p_input, char ** pp_args)
 {
     param_check(__FILE__, __LINE__, ARG_2, p_input, pp_args);
 
-    char * p_token  = strtok(p_input, " \t\n");
+    char * saveptr  = NULL;
+    char * p_token  = strtok_r(p_input, " \t\n", &saveptr);
     int i           = 0;
 
     while ((NULL != p_token) &&
         ((MAX_ARGS - 1) > i))
     {
-        size_t token_sz = getlen(p_token);
-        pp_args[i] = copy(p_token, token_sz);
-        if (NULL == pp_args[i])
+        char * p_redirect = strchr(p_token, '>');
+        size_t token_sz = ((NULL != p_redirect) ? (p_redirect - p_token) : getlen(p_token));
+        if (0 < token_sz)
         {
-            for (int j = 0; j < i; j++)
+            pp_args[i] = copy(p_token, token_sz);
+            if (NULL == pp_args[i])
             {
-                CLEAR(pp_args[j]);
+                for (int j = 0; j < i; j++)
+                {
+                    CLEAR(pp_args[j]);
+                }
+                return;
             }
-            return;
+            i++;
         }
-
-        i++;
-        p_token = strtok(NULL, " \t\n");
+        if (NULL != p_redirect)
+        {
+            pp_args[i] = copy(p_redirect, 1);
+            i++;
+            p_token = p_redirect + 1;
+        }
+        else 
+        {
+            p_token = strtok_r(NULL, " \t\n", &saveptr);
+        }
     }
 
     pp_args[i] = NULL;
@@ -204,26 +222,16 @@ void process_command (char * p_input, char ** pp_paths)
     {
         if (0 == compare(pp_args[i], ">"))
         {
-            if ((NULL != pp_args[i + 1]) &&
+            if ((0 < i) &&
+                (NULL != pp_args[i + 1]) &&
                 (NULL == pp_args[i + 2]))
             {
                 size_t filename_len = getlen(pp_args[i + 1]);
                 p_out_file = copy(pp_args[i + 1], filename_len);
                 redirect_output = 1;
+                CLEAR(pp_args[i]);
+                CLEAR(pp_args[i+1]);
                 break;
-            }
-            else if ((NULL != pp_args[i + 2]) ||
-                    (NULL == pp_args[i + 1]))
-            {
-                handle_error(NULL);
-                for (int j = 0; j < i; j++)
-                {
-                    CLEAR(pp_args[j]);
-                }
-
-                CLEAR(pp_args);
-                CLEAR(p_out_file);
-                return;
             }
             else
             {
@@ -240,7 +248,11 @@ void process_command (char * p_input, char ** pp_paths)
         }
     }
 
-    if (is_built_in(pp_args[0]))
+    if (NULL == pp_args[0])
+    {
+        // empty command; do nothing
+    }
+    else if (is_built_in(pp_args[0]))
     {
         execute_builtins(pp_args[0], pp_args, pp_paths);
     }
@@ -277,20 +289,16 @@ void process_command (char * p_input, char ** pp_paths)
                     dup2(fd, STDERR_FILENO);
                     close(fd);
                 }
-
                 if (-1 == execv(cmd_path, pp_args))
                 {
                     handle_error(NULL);
+                    exit(1);
                 }
             }
             else if (0 > pid)
             {
                 handle_error(NULL);
-            }
-            else
-            {
-                int status = 0;
-                wait(&status);
+                exit(1);
             }
         }
         else
@@ -312,6 +320,20 @@ void process_command (char * p_input, char ** pp_paths)
         CLEAR(pp_args[i]);
     }
     CLEAR(pp_args);
+}
+
+void process_line(char * p_input, char ** pp_paths)
+{
+    char * saveptr = NULL;
+    char * p_command = strtok_r(p_input, "&", &saveptr);
+    while (NULL != p_command)
+    {
+        process_command(p_command, pp_paths);
+        p_command = strtok_r(NULL, "&", &saveptr);
+    }
+    int status = 0;
+    pid_t cpid;
+    while ((cpid = wait(&status)) > 0);
 }
 
 int main (int argc, char * argv[])
@@ -368,15 +390,7 @@ int main (int argc, char * argv[])
         {
             handle_error(NULL);
         }
-
-        process_command(p_input, pp_dirs);
-
-        if (0 == compare(p_input, built_in_commands[0]))
-        {
-            CLEAR(p_input);
-            break;
-        }
-
+        process_line(p_input, pp_dirs);
         CLEAR(p_input);
     }
 

@@ -53,6 +53,9 @@ void
 parse_input (char * p_input, char ** pp_paths);
 
 void
-process_cmd (char * p_input, char ** pp_paths);
+process_command (char * p_input, char ** pp_paths);
+
+void 
+process_line(char * p_input, char ** pp_paths);
 
 #endif
