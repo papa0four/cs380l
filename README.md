@@ -30,20 +30,3 @@ repo for advanced operating systems UT Austin
   5. If you wish to only maintain one local copy of the code at all times, simply move all relevant files and directories to the cs380l directory
      - **NOTE** if you choose this option, ensure your *Makefile* and all test directories are set up to handle the new file structure for building and testing
   6. Once cloned, ensure all relevant files exist within your local VSCode environment and dev away!
-
-## push your code
-  1. once you have created a branch and modified the code, you are ready to push it to your branch repository
-  2. to add the relevant files, perform the following:
-     ```bash
-     git add location/relevant/files
-     ```
-  3. try and write a good commit message without being too verbose
-     ```bash
-     git commit -m "modified x function in y file or fixed bug(s) in x code block"
-     ```
-  4. now that your code is staged, you can set your stream before pushing
-     ```bash
-     git remote --set-upstream your_branch your_branch
-     git push your_branch
-     ```
-  5. you will more than likely be prompted to enter the password for your guest VM which we all know per the login
