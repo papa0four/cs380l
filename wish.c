@@ -236,11 +236,11 @@ void process_command (char * p_input, char ** pp_paths)
             else
             {
                 handle_error(NULL);
-                for (int j = 0; j < i; j++)
+                for (int j = 0; (j < MAX_ARGS) && (NULL != pp_args[j]); j++)
                 {
                     CLEAR(pp_args[j]);
                 }
-
+                
                 CLEAR(pp_args);
                 CLEAR(p_out_file);
                 return;
