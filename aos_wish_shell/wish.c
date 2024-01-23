@@ -240,7 +240,7 @@ void process_command (char * p_input, char ** pp_paths)
                 {
                     CLEAR(pp_args[j]);
                 }
-                
+
                 CLEAR(pp_args);
                 CLEAR(p_out_file);
                 return;
