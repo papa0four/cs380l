@@ -1,0 +1,4 @@
+pass tests/lib/sorted-thread-list
+pass tests/lib/unsorted-thread-list
+pass tests/lib/bad-input
+pass tests/lib/not-found
