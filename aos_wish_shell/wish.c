@@ -1,5 +1,6 @@
 #include "wish.h"
 
+/* a list of native wish shell commands */
 const char * built_in_commands[] = {
     "exit",
     "cd",
@@ -20,6 +21,12 @@ void param_check (const char * fname, int line_no, int n_args, ...)
     va_end(var_list);
 }
 
+/**
+ * @brief - a helper function to check a file pointer and close the file. Helps prevent redundant
+ *          code blocks when handling errors throughout functions.
+ * @param p_file - (FILE *) a pointer to the file being opened
+ * @return - (void) does not return any data to the calling function
+*/
 static void close_file(FILE * p_file)
 {
     if (NULL != p_file)
@@ -28,6 +35,11 @@ static void close_file(FILE * p_file)
     }
 }
 
+/**
+ * @brief - a helper function to handle all errors in accordance with the project description
+ * @param p_file - (FILE *) a pointer to the file being opened
+ * @return - (void) does not return any data to the calling function
+*/
 static void handle_error(FILE * p_file)
 {
     char error_message[30] = "An error has occurred\n"; 
@@ -35,6 +47,14 @@ static void handle_error(FILE * p_file)
     close_file(p_file);
 }
 
+/**
+ * @brief - a custom string compare function to use on data passed throughout the program.
+ *          does not rely on string functions so can be used on data containing 0's.
+ * @param p_str1 - (char *) the first character array used for comparison
+ * @param p_str2 - (char *) the seconds character array used to compare against
+ * @return - returns 0 if both character arrays are equivalent and -1 upon error
+ *           or if the character arrays do not match
+*/
 static int compare(const char * p_str1, const char * p_str2)
 {
     param_check(__FILE__, __LINE__, ARG_2, p_str1, p_str2);
@@ -81,6 +101,13 @@ int is_built_in (const char * p_command)
     return 0;
 }
 
+/**
+ * @brief - a custom string copy function to use on data passed throughout the program.
+ *          does not rely on string functions so can be used on data containing 0's.
+ * @param p_data - (const char *) the character array to be copied
+ * @param length - (size_t) the length of the character array being passed
+ * @return - (char *) returns a pointer to the newly allocated data to be used
+*/
 static char * copy (const char * p_data, size_t length)
 {
     param_check(__FILE__, __LINE__, ARG_1, p_data);
@@ -97,6 +124,12 @@ static char * copy (const char * p_data, size_t length)
     return p_new;
 }
 
+/**
+ * @brief - a custom string length function to use on data passed throughout the program.
+ *          does not rely on string functions so can be used on data containing 0's.
+ * @param p_str - (const char *) a point to the character array to determine its length
+ * @return - (size_t) returns the byte count of the array passed determining it's length
+*/
 static size_t getlen (const char * p_str)
 {
     const char * p_iter = NULL;
@@ -108,7 +141,16 @@ static size_t getlen (const char * p_str)
     return (p_iter - p_str);
 }
 
-void execute_builtins (const char * p_command, char ** pp_args, char ** pp_paths)
+/**
+ * @brief - if the command passed to the wish shell is found to be a `built-in`, this function
+ *          will execute it appropriately.
+ * @param p_command - (char *) a pointer to the command that was passed to the wish shell
+ * @param pp_args - (char **) a pointer array of arguments passed to the wish shell
+ * @param pp_paths - (char **) a pointer array of paths to determine command location within the os 
+ *                  file system for execution.
+ * @return - (void) does not return any data to the calling function
+*/
+static void execute_builtins (char * p_command, char ** pp_args, char ** pp_paths)
 {
     param_check(__FILE__, __LINE__, ARG_3, p_command, pp_args, pp_paths);
 
@@ -123,11 +165,6 @@ void execute_builtins (const char * p_command, char ** pp_args, char ** pp_paths
         {
             CLEAR(pp_args[i]);
         }
-        for (int i = 0; (i < MAX_ARGS) && (NULL != pp_paths[i]); i++)
-        {
-            CLEAR(pp_paths[i]);
-        }
-        exit(0);
     }
     else if (0 == compare(p_command, built_in_commands[1]))
     {
@@ -161,7 +198,14 @@ void execute_builtins (const char * p_command, char ** pp_args, char ** pp_paths
     }
 }
 
-void parse_input (char * p_input, char ** pp_args)
+/**
+ * @brief - handles the input passed to the wish shell and tokenizes the data for ease of processing
+ * @param p_input - (char *) a pointer to the input passed to the wish shell
+ * @param pp_paths - (char **) a pointer array of paths to determine command location within the os 
+ *                  fie system for execution.
+ * @return (void) does not return any data to the calling function
+*/
+static void parse_input (char * p_input, char ** pp_args)
 {
     param_check(__FILE__, __LINE__, ARG_2, p_input, pp_args);
 
@@ -202,7 +246,83 @@ void parse_input (char * p_input, char ** pp_args)
     pp_args[i] = NULL;
 }
 
-void process_command (char * p_input, char ** pp_paths)
+/**
+ * @brief - executes all redirect and non-native commands passed to the wish shell.
+ *          This function was primarily to clean up the process_command function and 
+ *          extract functionality out for potential reuse.
+ * @param redir_out - (int) an integer toggle to determine if the command passed was a
+ *                    redirector operation.
+ * @param p_file - (char *) a character array containing the redirection file name if 
+ *                 redirection operation occurs.
+ * @param pp_paths - (char **) - a pointer array of paths to determine command location within the os 
+ *                  fie system for execution.
+ * @param pp_args - (char **) a pointer array of arguments passed to the wish shell
+ * @return - (void) does not return any data to the calling function
+*/
+static void execute_cmd (int redir_out, char * p_file, char ** pp_paths, char ** pp_args)
+{
+    param_check(__FILE__, __LINE__, ARG_2, pp_paths, pp_args);
+
+    char cmd_path[MAX_INPUT]    = { 0 };
+    int  cmd_found              = 0;
+
+    for (int i = 0; NULL != pp_paths[i]; i++)
+    {
+        snprintf(cmd_path, sizeof(cmd_path), "%s/%s", pp_paths[i], pp_args[0]);
+
+        if (0 == access(cmd_path, X_OK))
+        {
+            cmd_found = 1;
+            break;
+        }
+    }
+
+    if (cmd_found)
+    {
+        pid_t pid = fork();
+        if (0 == pid)
+        {
+            if (redir_out)
+            {
+                int fd = open(p_file, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+                if (-1 == fd)
+                {
+                    handle_error(NULL);
+                    exit(1);
+                }
+                dup2(fd, STDOUT_FILENO);
+                dup2(fd, STDERR_FILENO);
+                close(fd);
+            }
+            if (-1 == execv(cmd_path, pp_args))
+            {
+                handle_error(NULL);
+                exit(1);
+            }
+        }
+        else if (0 > pid)
+        {
+            handle_error(NULL);
+            exit(1);
+        }
+    }
+    else
+    {
+        handle_error(NULL);
+    }
+}
+
+/**
+ * @brief - a helper function that takes the parsed user input and determines the line of execution
+ *          based upon the type of command being passed. Native/Non-native, redirection, and/or
+ *          parallel commands are processed here helping the wish shell function according to the
+ *          program's guidance documentation.
+ * @param p_input - (char *) a pointer to the command passed to the wish shell
+ * @param pp_paths - (char **) a pointer array of paths to determine command location within the os 
+ *                  fie system for execution.
+ * @return - (void) does not return any data to the calling function
+*/
+static void process_command (char * p_input, char ** pp_paths)
 {
     param_check(__FILE__, __LINE__, ARG_2, p_input, pp_paths);
 
@@ -258,53 +378,7 @@ void process_command (char * p_input, char ** pp_paths)
     }
     else
     {
-        char cmd_path[MAX_INPUT]    = { 0 };
-        int cmd_found               = 0;
-
-        for (int i = 0; NULL != pp_paths[i]; i++)
-        {
-            snprintf(cmd_path, sizeof(cmd_path), "%s/%s", pp_paths[i], pp_args[0]);
-
-            if (0 == access(cmd_path, X_OK))
-            {
-                cmd_found = 1;
-                break;
-            }
-        }
-
-        if (cmd_found)
-        {
-            pid_t pid = fork();
-            if (0 == pid)
-            {
-                if (redirect_output)
-                {
-                    int fd = open(p_out_file, O_WRONLY | O_CREAT | O_TRUNC, 0644);
-                    if (-1 == fd)
-                    {
-                        handle_error(NULL);
-                        exit(1);
-                    }
-                    dup2(fd, STDOUT_FILENO);
-                    dup2(fd, STDERR_FILENO);
-                    close(fd);
-                }
-                if (-1 == execv(cmd_path, pp_args))
-                {
-                    handle_error(NULL);
-                    exit(1);
-                }
-            }
-            else if (0 > pid)
-            {
-                handle_error(NULL);
-                exit(1);
-            }
-        }
-        else
-        {
-            handle_error(NULL);
-        }
+        execute_cmd(redirect_output, p_out_file, pp_paths, pp_args);
     }
 
     if (redirect_output)
@@ -344,7 +418,7 @@ int main (int argc, char * argv[])
         exit(1);
     }
 
-    char    * p_input           = 0;
+    char    * p_input           = NULL;
     size_t    input_sz          = 0;
     char    * pp_dirs[MAX_ARGS] = { 0 };
     
@@ -391,15 +465,18 @@ int main (int argc, char * argv[])
             handle_error(NULL);
         }
         process_line(p_input, pp_dirs);
+
+        if (0 == compare(built_in_commands[0], p_input))
+        {
+            break;
+        }
+        
         CLEAR(p_input);
     }
 
     close_file(p_batch);
 
-    if (NULL != p_input)
-    {
-        CLEAR(p_input);
-    }
+    CLEAR(p_input);
     
     for (int i = 0; NULL != pp_dirs[i]; i++)
     {
