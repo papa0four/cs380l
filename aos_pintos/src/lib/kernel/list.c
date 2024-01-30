@@ -1,5 +1,6 @@
 #include "list.h"
 #include "../debug.h"
+#include "../../threads/thread.h"
 
 /* Our doubly linked lists have two header elements: the "head"
    just before the first element and the "tail" just after the
@@ -490,3 +491,49 @@ struct list_elem *list_min (struct list *list, list_less_func *less, void *aux)
     }
   return min;
 }
+
+bool comparator (const struct list_elem * a, const struct list_elem * b, void * aux)
+{
+    if ((NULL == a) ||
+        (NULL == b) ||
+        (NULL == aux))
+    {
+        return false;
+    }
+
+    struct thread * p_thread_a = list_entry(a, struct thread, allelem);
+    struct thread * p_thread_b = list_entry(b, struct thread, allelem);
+    return p_thread_a->tid < p_thread_b->tid;
+}
+
+int get_sorted_index (struct list * threads, struct thread * target)
+{
+    if ((NULL == threads) ||
+        (NULL == target))
+    {
+        return -1;
+    }
+
+    struct list_elem * p_entry   = list_begin(threads);
+    struct thread    * p_head    = list_entry(p_entry, struct thread, allelem);
+
+    list_sort(threads, comparator, &p_head->tid);
+
+    int index = 0;
+    struct list_elem * p_elem = NULL;
+
+    for (p_elem = list_begin(threads); list_end(threads) != p_elem; p_elem = list_next(p_elem))
+    {
+        struct thread * p_current = list_entry(p_elem, struct thread, allelem);
+        if (target->tid == p_current->tid)
+        {
+            return index;
+        }
+
+        index++;
+    }
+
+    return -1;
+}
+
+/* end of list.c */
