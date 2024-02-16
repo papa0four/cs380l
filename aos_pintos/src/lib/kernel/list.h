@@ -86,7 +86,6 @@
 #include <stddef.h>
 #include <stdint.h>
 
-/* thread struct */
 struct thread;
 
 /* List element. */
@@ -162,6 +161,7 @@ bool list_empty (struct list *);
 
 /* Miscellaneous. */
 void list_reverse (struct list *);
+int get_sorted_index (struct list *threads, struct thread *target);
 
 /* Compares the value of two list elements A and B, given
    auxiliary data AUX.  Returns true if A is less than B, or
@@ -179,27 +179,5 @@ void list_unique (struct list *, struct list *duplicates, list_less_func *,
 /* Max and min. */
 struct list_elem *list_max (struct list *, list_less_func *, void *aux);
 struct list_elem *list_min (struct list *, list_less_func *, void *aux);
-
-/* comparator && get_sorted_index */
-/**
- * @brief - compares two elements' values to aid in the sorting of the list
- * @param a - (const struct list_elem *) a pointer to the first list element
- * @param b - (const struct list_elem *) a pointer to the second list element
- * @param aux - (void *) a pointer to hold the data value of the list element to base comparison
- * @return - if the value of a is < b, this function will return true (or 1). If the value
- *           of a is > or = to b, this function will return false (or 0).
-*/
-bool comparator (const struct list_elem * a, const struct list_elem * b, void * aux);
-
-/**
- * @brief - takes in a list of elements, sorts the data, and uses the passed target to 
- *          determine the location of a specific element within the list (post sort).
- * @param threads - (struct list *) a pointer to the list structure containing all the data
- * @param target - (struct thread *) a pointer to the target data to find within the sorted list
- * @return - upon successful location of a specific element, this function will return the
- *           index value. Upon error or if the targeted index does not exist in the list, this
- *           function will return -1, indicating an error has occurred. 
-*/
-int get_sorted_index (struct list * threads, struct thread * target);
 
 #endif /* lib/kernel/list.h */

@@ -4,6 +4,7 @@
 #include <random.h>
 #include <stdio.h>
 #include <string.h>
+#include "interrupt.h"
 #include "threads/flags.h"
 #include "threads/interrupt.h"
 #include "threads/intr-stubs.h"
@@ -27,6 +28,10 @@ static struct list ready_list;
 /* List of all processes.  Processes are added to this list
    when they are first scheduled and removed when they exit. */
 static struct list all_list;
+
+/* List of processes in THREAD_BLOCKED state, that is, processes
+   that are blocked from running. */
+static struct list blocked_list;
 
 /* Idle thread. */
 static struct thread *idle_thread;
@@ -233,6 +238,38 @@ void thread_unblock (struct thread *t)
   list_push_back (&ready_list, &t->elem);
   t->status = THREAD_READY;
   intr_set_level (old_level);
+}
+
+/* Change the state of the called thread to THREAD_BLOCKED
+   and add to the global blocked_list
+   
+   If the current thread state is not idle, change the state
+   of the calling thread to THREAD_BLOCKED, storing the thread
+   struct member `wake_up_tick', updating the global tick timer
+   if necessary, and call schedule on the next available
+   process. */
+void thread_sleep (int64_t ticks)
+{
+  struct thread *cur = thread_current ();
+  int64_t start = timer_ticks ();
+  int64_t wake_up_tick = start + ticks;
+
+  ASSERT (cur != idle_thread); // ensure current thread is not idle thread
+
+  /* Disable interrupts to ensure atomic operations. */
+  enum intr_level old_level = intr_disable();
+
+  if (cur != idle_thread)
+  {
+    cur->wake_up_tick = wake_up_tick; // set the wake-up tick
+
+    /* Insert the current thread into a global blocked list. */
+    list_push_back(&blocked_list, &cur->elem);
+
+    thread_block(); // change the thread's state to THREAD_BLOCKED
+  }
+
+  intr_set_level(old_level); // restore the previous interrupt state
 }
 
 /* Returns the name of the running thread. */
