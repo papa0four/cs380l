@@ -15,6 +15,9 @@
 #include "userprog/process.h"
 #endif
 
+/*dev emma*/
+bool compare_thread_priority(const struct list_elem *a, const struct list_elem *b, void *aux UNUSED);
+
 /* Random value for struct thread's `magic' member.
    Used to detect stack overflow.  See the big comment at the top
    of thread.h for details. */
@@ -59,6 +62,7 @@ static unsigned thread_ticks; /* # of timer ticks since last yield. */
    Controlled by kernel command-line option "-o mlfqs". */
 bool thread_mlfqs;
 
+
 static void kernel_thread (thread_func *, void *aux);
 
 static void idle (void *aux UNUSED);
@@ -70,6 +74,11 @@ static void *alloc_frame (struct thread *, size_t size);
 static void schedule (void);
 void thread_schedule_tail (struct thread *prev);
 static tid_t allocate_tid (void);
+
+/*dev emma*/
+bool compare_thread_priority(const struct list_elem *a, const struct list_elem *b, void *aux UNUSED) {
+  return list_entry(a, struct thread, elem)->priority > list_entry(b, struct thread, elem)->priority;
+}
 
 /* Initializes the threading system by transforming the code
    that's currently running into a thread.  This can't work in
@@ -167,6 +176,9 @@ tid_t thread_create (const char *name, int priority, thread_func *function,
   struct switch_threads_frame *sf;
   tid_t tid;
 
+  /* Declare old_level here */
+  enum intr_level old_level;
+
   ASSERT (function != NULL);
 
   /* Allocate thread. */
@@ -195,6 +207,12 @@ tid_t thread_create (const char *name, int priority, thread_func *function,
 
   /* Add to run queue. */
   thread_unblock (t);
+
+  /* If the new thread has a higher priority than the current thread, yield the CPU. */
+  old_level = intr_disable ();
+  if (thread_current() != idle_thread && priority > thread_get_priority())
+    thread_yield ();
+  intr_set_level (old_level);
 
   return tid;
 }
@@ -230,7 +248,8 @@ void thread_unblock (struct thread *t)
 
   old_level = intr_disable ();
   ASSERT (t->status == THREAD_BLOCKED);
-  list_push_back (&ready_list, &t->elem);
+  //list_push_back (&ready_list, &t->elem);
+  list_insert_ordered (&ready_list, &t->elem, compare_thread_priority, NULL);
   t->status = THREAD_READY;
   intr_set_level (old_level);
 }
@@ -290,7 +309,8 @@ void thread_yield (void)
 
   old_level = intr_disable ();
   if (cur != idle_thread)
-    list_push_back (&ready_list, &cur->elem);
+   // list_push_back (&ready_list, &cur->elem);
+   list_insert_ordered (&ready_list, &cur->elem, compare_thread_priority, NULL);
   cur->status = THREAD_READY;
   schedule ();
   intr_set_level (old_level);
@@ -315,6 +335,8 @@ void thread_foreach (thread_action_func *func, void *aux)
 void thread_set_priority (int new_priority)
 {
   thread_current ()->priority = new_priority;
+  list_sort (&ready_list, compare_thread_priority, NULL);
+  thread_yield(); //dev emma
 }
 
 /* Returns the current thread's priority. */
@@ -455,8 +477,10 @@ static struct thread *next_thread_to_run (void)
 {
   if (list_empty (&ready_list))
     return idle_thread;
-  else
+  else {
+    list_sort(&ready_list, compare_thread_priority, NULL); //dev emma
     return list_entry (list_pop_front (&ready_list), struct thread, elem);
+  }
 }
 
 /* Completes a thread switch by activating the new thread's page
@@ -523,7 +547,11 @@ static void schedule (void)
 
   if (cur != next)
     prev = switch_threads (cur, next);
-  thread_schedule_tail (prev);
+   thread_schedule_tail (prev);
+
+     /* Set the status of the current thread to THREAD_RUNNING */
+  cur = running_thread ();
+  cur->status = THREAD_RUNNING;
 }
 
 /* Returns a tid to use for a new thread. */
