@@ -30,12 +30,19 @@ static void busy_wait (int64_t loops);
 static void real_time_sleep (int64_t num, int32_t denom);
 static void real_time_delay (int64_t num, int32_t denom);
 
+/* List of processes in THREAD_BLOCKED state, that is, processes
+   that are blocked from running. */
+static struct list blocked_list;
+
 /* Sets up the timer to interrupt TIMER_FREQ times per second,
    and registers the corresponding interrupt. */
 void timer_init (void)
 {
   pit_configure_channel (0, 2, TIMER_FREQ);
   intr_register_ext (0x20, timer_interrupt, "8254 Timer");
+
+  /* initialize blocked list*/
+  list_init (&blocked_list);
 }
 
 /* Calibrates loops_per_tick, used to implement brief delays. */
@@ -78,15 +85,53 @@ int64_t timer_ticks (void)
    should be a value once returned by timer_ticks(). */
 int64_t timer_elapsed (int64_t then) { return timer_ticks () - then; }
 
+// static char * get_status (enum thread_status t_stat)
+// {
+//   char *status = NULL;
+//   switch (t_stat)
+//   {
+//     case THREAD_RUNNING:
+//       status = "THREAD_RUNNING\0";
+//       break;
+
+//     case THREAD_READY:
+//       status = "THREAD_READY\0";
+//       break;
+
+//     case THREAD_BLOCKED:
+//       status = "THREAD_BLOCKED\0";
+//       break;
+
+//     case THREAD_DYING:
+//       status = "THREAD_DYING\0";
+//       break;
+
+//     default:
+//       status = "NO_STATUS\0";
+//       break;
+//   }
+
+//   return status;
+// }
+
 /* Sleeps for approximately TICKS timer ticks.  Interrupts must
    be turned on. */
 void timer_sleep (int64_t ticks)
 {
-  int64_t start = timer_ticks ();
+  if (0 >= ticks)
+    return;
 
   ASSERT (intr_get_level () == INTR_ON);
-  while (timer_elapsed (start) < ticks)
-    thread_yield ();
+
+  int64_t wake_up_tick = timer_ticks () + ticks;
+  struct thread *cur = thread_current ();
+
+  enum intr_level old_level = intr_disable ();
+  cur->wake_up_tick = wake_up_tick;
+  list_insert_ordered (&blocked_list, &cur->elem, (list_less_func *) &compare_priority, NULL);
+  thread_block ();
+
+  intr_set_level (old_level);
 }
 
 /* Sleeps for approximately MS milliseconds.  Interrupts must be
@@ -140,7 +185,28 @@ static void timer_interrupt (struct intr_frame *args UNUSED)
   ticks++;
   thread_tick ();
 
-  
+  enum intr_level old_level = intr_disable ();
+
+  struct list_elem *element = list_begin (&blocked_list);
+  while (list_end (&blocked_list) != element)
+  {
+    struct thread *t = list_entry (element, struct thread, elem);
+    if (t->wake_up_tick <= ticks)
+    {
+      /* remove the current process from the blocked list
+         and return pointer to the next process in the list */
+      element = list_remove (element);
+
+      // call thread_unblock to handle list insertion and state change
+      thread_unblock (t);
+    }
+    else
+    {
+      element = list_next (element);
+    }
+  }
+
+  intr_set_level (old_level);
 }
 
 /* Returns true if LOOPS iterations waits for more than one timer

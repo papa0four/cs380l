@@ -29,10 +29,6 @@ static struct list ready_list;
    when they are first scheduled and removed when they exit. */
 static struct list all_list;
 
-/* List of processes in THREAD_BLOCKED state, that is, processes
-   that are blocked from running. */
-static struct list blocked_list;
-
 /* Idle thread. */
 static struct thread *idle_thread;
 
@@ -148,6 +144,13 @@ void thread_print_stats (void)
           idle_ticks, kernel_ticks, user_ticks);
 }
 
+bool compare_priority (const struct list_elem *a, const struct list_elem *b, void *aux UNUSED)
+{
+  struct thread *t_a = list_entry(a, struct thread, elem);
+  struct thread *t_b = list_entry(b, struct thread, elem);
+  return t_a->priority > t_b->priority;
+}
+
 /* Creates a new kernel thread named NAME with the given initial
    PRIORITY, which executes FUNCTION passing AUX as the argument,
    and adds it to the ready queue.  Returns the thread identifier
@@ -240,38 +243,6 @@ void thread_unblock (struct thread *t)
   intr_set_level (old_level);
 }
 
-/* Change the state of the called thread to THREAD_BLOCKED
-   and add to the global blocked_list
-   
-   If the current thread state is not idle, change the state
-   of the calling thread to THREAD_BLOCKED, storing the thread
-   struct member `wake_up_tick', updating the global tick timer
-   if necessary, and call schedule on the next available
-   process. */
-void thread_sleep (int64_t ticks)
-{
-  struct thread *cur = thread_current ();
-  int64_t start = timer_ticks ();
-  int64_t wake_up_tick = start + ticks;
-
-  ASSERT (cur != idle_thread); // ensure current thread is not idle thread
-
-  /* Disable interrupts to ensure atomic operations. */
-  enum intr_level old_level = intr_disable();
-
-  if (cur != idle_thread)
-  {
-    cur->wake_up_tick = wake_up_tick; // set the wake-up tick
-
-    /* Insert the current thread into a global blocked list. */
-    list_push_back(&blocked_list, &cur->elem);
-
-    thread_block(); // change the thread's state to THREAD_BLOCKED
-  }
-
-  intr_set_level(old_level); // restore the previous interrupt state
-}
-
 /* Returns the name of the running thread. */
 const char *thread_name (void) { return thread_current ()->name; }
 
@@ -348,10 +319,31 @@ void thread_foreach (thread_action_func *func, void *aux)
     }
 }
 
+void thread_yield_priority (void)
+{
+  if (list_empty(&ready_list))
+    return;
+
+  struct thread *cur = thread_current ();
+  struct thread * next = list_entry (list_front(&ready_list), struct thread, elem);
+
+  if (next->priority > cur->priority)
+  {
+    if (!intr_context ())
+      thread_yield ();  // Direct yield if not in interrupt context.
+    else
+      intr_yield_on_return (); // Set flag to yield on returning from interrupt
+  }
+}
+
 /* Sets the current thread's priority to NEW_PRIORITY. */
 void thread_set_priority (int new_priority)
 {
-  thread_current ()->priority = new_priority;
+  enum intr_level old_level = intr_disable ();
+  struct thread *cur = thread_current ();
+  cur->priority = new_priority;
+  thread_yield_priority ();
+  intr_set_level (old_level);
 }
 
 /* Returns the current thread's priority. */
