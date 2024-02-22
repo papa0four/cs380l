@@ -32,7 +32,6 @@
 #include "threads/interrupt.h"
 #include "threads/thread.h"
 
-
 /* Initializes semaphore SEMA to VALUE.  A semaphore is a
    nonnegative integer along with two atomic operators for
    manipulating it:
@@ -254,10 +253,10 @@ struct semaphore_elem
   int thread_priority;                /* Priority of the thread waiting on this semaphore. */
 };
 /* Returns true if value A is less than value B, false otherwise. */
-bool sema_priority_more (const struct list_elem *a_, const struct list_elem *b_, void *aux UNUSED) 
+bool sema_priority_more (struct list_elem *a_, const struct list_elem *b_, void *aux UNUSED) 
 {
-  const struct semaphore_elem *a = list_entry (a_, struct semaphore_elem, elem);
-  const struct semaphore_elem *b = list_entry (b_, struct semaphore_elem, elem);
+  struct semaphore_elem *a = list_entry (a_, struct semaphore_elem, elem);
+  struct semaphore_elem *b = list_entry (b_, struct semaphore_elem, elem);
 
   if (list_empty(&a->semaphore.waiters)) 
   {
@@ -306,7 +305,6 @@ void cond_init (struct condition *cond)
 void cond_wait (struct condition *cond, struct lock *lock)
 {
   struct semaphore_elem waiter;
-  int priority = thread_get_priority();
 
   ASSERT (cond != NULL);
   ASSERT (lock != NULL);
