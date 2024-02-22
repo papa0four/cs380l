@@ -4,9 +4,9 @@
 #include <round.h>
 #include <stdio.h>
 #include "devices/pit.h"
-#include "threads/interrupt.h"
-#include "threads/synch.h"
-#include "threads/thread.h"
+#include "../threads/interrupt.h"
+#include "../threads/synch.h"
+#include "../threads/thread.h"
 
 /* See [8254] for hardware details of the 8254 timer chip. */
 
@@ -128,7 +128,7 @@ void timer_sleep (int64_t ticks)
 
   enum intr_level old_level = intr_disable ();
   cur->wake_up_tick = wake_up_tick;
-  list_insert_ordered (&blocked_list, &cur->elem, (list_less_func *) &compare_priority, NULL);
+  list_insert_ordered (&blocked_list, &cur->elem, (list_less_func *) &thread_cmp_priority, NULL);
   thread_block ();
 
   intr_set_level (old_level);

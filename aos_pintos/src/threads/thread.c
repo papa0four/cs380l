@@ -144,7 +144,7 @@ void thread_print_stats (void)
           idle_ticks, kernel_ticks, user_ticks);
 }
 
-bool compare_priority (const struct list_elem *a, const struct list_elem *b, void *aux UNUSED)
+bool thread_cmp_priority (const struct list_elem *a, const struct list_elem *b, void *aux UNUSED)
 {
   struct thread *t_a = list_entry(a, struct thread, elem);
   struct thread *t_b = list_entry(b, struct thread, elem);
@@ -186,6 +186,9 @@ tid_t thread_create (const char *name, int priority, thread_func *function,
   init_thread (t, name, priority);
   tid = t->tid = allocate_tid ();
 
+  /* Prepare thread for stack initialization. */
+  enum intr_level old_level = intr_disable ();
+
   /* Stack frame for kernel_thread(). */
   kf = alloc_frame (t, sizeof *kf);
   kf->eip = NULL;
@@ -201,8 +204,18 @@ tid_t thread_create (const char *name, int priority, thread_func *function,
   sf->eip = switch_entry;
   sf->ebp = 0;
 
+  intr_set_level (old_level);
+
   /* Add to run queue. */
   thread_unblock (t);
+
+  old_level = intr_disable ();
+  /* compare priorities: current thread and new thread. */
+  /* Yield the CPU if new thread has higher priority. */
+  if (thread_current () != idle_thread && t->priority > thread_current ()->priority)
+    thread_yield ();
+
+  intr_set_level (old_level);
 
   return tid;
 }
@@ -238,8 +251,9 @@ void thread_unblock (struct thread *t)
 
   old_level = intr_disable ();
   ASSERT (t->status == THREAD_BLOCKED);
-  list_push_back (&ready_list, &t->elem);
+  list_insert_ordered (&ready_list, &t->elem, (list_less_func *)&thread_cmp_priority, NULL);
   t->status = THREAD_READY;
+
   intr_set_level (old_level);
 }
 
@@ -298,7 +312,8 @@ void thread_yield (void)
 
   old_level = intr_disable ();
   if (cur != idle_thread)
-    list_push_back (&ready_list, &cur->elem);
+    list_insert_ordered (&ready_list, &cur->elem, (list_less_func *)&thread_cmp_priority, NULL);
+
   cur->status = THREAD_READY;
   schedule ();
   intr_set_level (old_level);
@@ -319,31 +334,15 @@ void thread_foreach (thread_action_func *func, void *aux)
     }
 }
 
-void thread_yield_priority (void)
+/* Sets the current thread's priority to NEW_PRIORITY. */
+void thread_set_priority (int new_priority)
 {
   if (list_empty(&ready_list))
     return;
 
-  struct thread *cur = thread_current ();
-  struct thread * next = list_entry (list_front(&ready_list), struct thread, elem);
-
-  if (next->priority > cur->priority)
-  {
-    if (!intr_context ())
-      thread_yield ();  // Direct yield if not in interrupt context.
-    else
-      intr_yield_on_return (); // Set flag to yield on returning from interrupt
-  }
-}
-
-/* Sets the current thread's priority to NEW_PRIORITY. */
-void thread_set_priority (int new_priority)
-{
-  enum intr_level old_level = intr_disable ();
-  struct thread *cur = thread_current ();
-  cur->priority = new_priority;
-  thread_yield_priority ();
-  intr_set_level (old_level);
+  thread_current ()->priority = new_priority;
+  list_sort (&ready_list, (list_less_func *)&thread_cmp_priority, NULL);
+  thread_yield ();
 }
 
 /* Returns the current thread's priority. */
