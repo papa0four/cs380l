@@ -251,17 +251,25 @@ struct semaphore_elem
 {
   struct list_elem elem;      /* List element. */
   struct semaphore semaphore; /* This semaphore. */
+  int thread_priority;                /* Priority of the thread waiting on this semaphore. */
 };
 /* Returns true if value A is less than value B, false otherwise. */
-bool sema_priority_more (const struct list_elem *a_, const struct list_elem *b_, void *aux UNUSED) {
+bool sema_priority_more (const struct list_elem *a_, const struct list_elem *b_, void *aux UNUSED) 
+{
   const struct semaphore_elem *a = list_entry (a_, struct semaphore_elem, elem);
   const struct semaphore_elem *b = list_entry (b_, struct semaphore_elem, elem);
 
-  struct list *a_list = (struct list *)&a->semaphore.waiters;
-  struct list *b_list = (struct list *)&b->semaphore.waiters;
+  if (list_empty(&a->semaphore.waiters)) 
+  {
+    return false;
+  }
+  if (list_empty(&b->semaphore.waiters)) 
+  {
+    return true;
+  }
 
-  struct thread *t_a = list_entry (list_front (a_list), struct thread, elem);
-  struct thread *t_b = list_entry (list_front (b_list), struct thread, elem);
+  struct thread *t_a = list_entry (list_front (&a->semaphore.waiters), struct thread, elem);
+  struct thread *t_b = list_entry (list_front (&b->semaphore.waiters), struct thread, elem);
 
   return t_a->priority > t_b->priority;
 }
@@ -298,6 +306,7 @@ void cond_init (struct condition *cond)
 void cond_wait (struct condition *cond, struct lock *lock)
 {
   struct semaphore_elem waiter;
+  int priority = thread_get_priority();
 
   ASSERT (cond != NULL);
   ASSERT (lock != NULL);
@@ -305,7 +314,7 @@ void cond_wait (struct condition *cond, struct lock *lock)
   ASSERT (lock_held_by_current_thread (lock));
 
   sema_init (&waiter.semaphore, 0);
-  list_insert_ordered (&cond->waiters, &waiter.elem, sema_priority_more, NULL);
+  list_insert_ordered (&cond->waiters, &waiter.elem, (list_less_func *) &sema_priority_more, NULL);
   lock_release (lock);
   sema_down (&waiter.semaphore);
   lock_acquire (lock);
@@ -318,17 +327,18 @@ void cond_wait (struct condition *cond, struct lock *lock)
    An interrupt handler cannot acquire a lock, so it does not
    make sense to try to signal a condition variable within an
    interrupt handler. */
-void cond_signal (struct condition *cond, struct lock *lock UNUSED)
+void cond_signal (struct condition *cond, struct lock *lock)
 {
   ASSERT (cond != NULL);
   ASSERT (lock != NULL);
   ASSERT (!intr_context ());
   ASSERT (lock_held_by_current_thread (lock));
 
-  if (!list_empty (&cond->waiters)) {
-    list_sort (&cond->waiters, sema_priority_more, NULL);
-    sema_up (&list_entry (list_pop_front (&cond->waiters),
-                          struct semaphore_elem, elem)->semaphore);
+  if (!list_empty (&cond->waiters)) 
+  {
+    list_sort (&cond->waiters, (list_less_func *) &sema_priority_more, NULL);
+    struct list_elem *e = list_pop_front(&cond->waiters);
+    sema_up (&list_entry (e, struct semaphore_elem, elem)->semaphore);
   }
 }
 
