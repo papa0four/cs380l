@@ -24,6 +24,11 @@
    that are ready to run but not actually running. */
 static struct list ready_list;
 
+/* List of processes that are currently sleeping. Processes are
+   added to this list when they call timer_sleep and are removed
+   when their sleep timer is over. */
+static struct list sleep_list;
+
 /* List of all processes.  Processes are added to this list
    when they are first scheduled and removed when they exit. */
 static struct list all_list;
@@ -90,6 +95,7 @@ void thread_init (void)
 
   lock_init (&tid_lock);
   list_init (&ready_list);
+  list_init (&sleep_list);
   list_init (&all_list);
 
   /* Set up a thread structure for the running thread. */
@@ -232,6 +238,48 @@ void thread_unblock (struct thread *t)
   ASSERT (t->status == THREAD_BLOCKED);
   list_push_back (&ready_list, &t->elem);
   t->status = THREAD_READY;
+  intr_set_level (old_level);
+}
+
+bool compare_wakeup_tick (const struct list_elem *a, const struct list_elem *b,
+                          void *aux UNUSED)
+{
+  struct thread *t_a = list_entry (a, struct thread, elem);
+  struct thread *t_b = list_entry (b, struct thread, elem);
+  return t_a->wakeup_tick < t_b->wakeup_tick;
+}
+
+/* Puts the current thread to sleep until WAKEUP_TICK. */
+void thread_sleep (int64_t wakeup_tick)
+{
+  struct thread *cur = thread_current ();
+
+  enum intr_level old_level;
+  old_level = intr_disable ();
+  if (cur != idle_thread)
+    {
+      cur->wakeup_tick = wakeup_tick;
+      list_insert_ordered (&sleep_list, &cur->elem, compare_wakeup_tick, NULL);
+    }
+  thread_block ();
+  intr_set_level (old_level);
+}
+
+void thread_wakeup (int64_t ticks)
+{
+  enum intr_level old_level;
+  old_level = intr_disable ();
+
+  struct list_elem *e = list_begin (&sleep_list);
+
+  while (e != list_end (&sleep_list))
+    {
+      struct thread *t = list_entry (e, struct thread, elem);
+      if (t->wakeup_tick > ticks)
+        break;
+      e = list_remove (e);
+      thread_unblock (t);
+    }
   intr_set_level (old_level);
 }
 

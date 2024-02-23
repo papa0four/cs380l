@@ -100,6 +100,8 @@ struct thread
   uint32_t *pagedir; /* Page directory. */
 #endif
 
+  int64_t wakeup_tick; /* Time to wake up (in timer ticks). */
+
   /* Owned by thread.c. */
   unsigned magic; /* Detects stack overflow. */
 };
@@ -120,6 +122,11 @@ tid_t thread_create (const char *name, int priority, thread_func *, void *);
 
 void thread_block (void);
 void thread_unblock (struct thread *);
+
+bool compare_wakeup_tick (const struct list_elem *, const struct list_elem *,
+                          void *);
+void thread_sleep (int64_t);
+void thread_wakeup (int64_t);
 
 struct thread *thread_current (void);
 tid_t thread_tid (void);
