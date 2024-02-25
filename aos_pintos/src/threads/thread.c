@@ -334,19 +334,34 @@ void thread_foreach (thread_action_func *func, void *aux)
 /* Sets the current thread's priority to NEW_PRIORITY. */
 void thread_set_priority (int new_priority) {
   struct thread *current_thread = thread_current();
-  current_thread->priority = new_priority;
   
-  if (new_priority > current_thread->donation_priority) {
-    current_thread->donation_priority = new_priority;
-    
-    if (current_thread->waiting_for_lock != NULL) {
-      donate_priority(current_thread, current_thread->waiting_for_lock->holder);
+  // Store the original priority before any donations
+  current_thread->original_priority = new_priority;
+
+  // If the new priority is higher than the current effective priority, set it immediately
+  if (new_priority > current_thread->priority) {
+    current_thread->priority = new_priority;
+    current_thread->donation_priority = new_priority;  // Update donation_priority
+  } else {
+    // If the new priority is lower, only set it if there are no effective donations
+    if (list_empty(&current_thread->donors)) {
+      current_thread->priority = new_priority;
+      current_thread->donation_priority = -1;  // Reset donation_priority
     }
   }
-  
+
+  // If the thread is waiting for a lock, try to donate the priority
+  if (current_thread->waiting_for_lock != NULL) {
+    donate_priority(current_thread, current_thread->waiting_for_lock->holder);
+  }
+
+  // Sort the ready list and yield the CPU if necessary
   list_sort (&ready_list, compare_thread_priority, NULL);
-  thread_yield();
+  if (!list_empty(&ready_list) && new_priority < list_entry(list_front(&ready_list), struct thread, elem)->priority) {
+    thread_yield();
+  }
 }
+
 
 
 /* Returns the current thread's priority. In the presence of priority donation, returns the higher (donated) priority.. */
@@ -466,7 +481,8 @@ static void init_thread (struct thread *t, const char *name, int priority)
   strlcpy (t->name, name, sizeof t->name);
   t->stack = (uint8_t *) t + PGSIZE;
   t->priority = priority;
-  t->donation_priority = priority; // Initialize donation_priority
+  t->original_priority = priority;  // Initialize original_priority
+  t->donation_priority = -1; // Initialize donation_priority
   t->magic = THREAD_MAGIC;
 
   old_level = intr_disable ();
