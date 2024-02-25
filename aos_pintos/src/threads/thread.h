@@ -94,6 +94,7 @@ struct thread
   int64_t wakeup_time;  /* Time at which the thread should wake up. dev_emma*/
   int donation_priority; /*Priority due to donation*/
   struct lock* waiting_for_lock;
+  struct list donors; // List of donors
 
 
 

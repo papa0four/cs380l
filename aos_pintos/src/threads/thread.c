@@ -472,6 +472,7 @@ static void init_thread (struct thread *t, const char *name, int priority)
   old_level = intr_disable ();
   list_push_back (&all_list, &t->allelem);
   intr_set_level (old_level);
+  list_init(&t->donors); // Initialize donors
 }
 
 /* Allocates a SIZE-byte frame at the top of thread T's stack and
@@ -588,7 +589,10 @@ static tid_t allocate_tid (void)
 void donate_priority(struct thread *donating_thread, struct thread *receiving_thread) {
   if (donating_thread->priority > receiving_thread->donation_priority) {
     receiving_thread->donation_priority = donating_thread->priority;
-    
+
+    // Add the donating thread to the receiving thread's donors list
+    list_insert_ordered(&receiving_thread->donors, &donating_thread->elem, compare_thread_priority, NULL);
+
     // If the receiving thread is also waiting for a lock, propagate the donation.
     if (receiving_thread->waiting_for_lock != NULL) {
       donate_priority(receiving_thread, receiving_thread->waiting_for_lock->holder);
