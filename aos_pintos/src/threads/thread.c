@@ -587,16 +587,17 @@ static tid_t allocate_tid (void)
 }
 /*Donation Priority function*/
 void donate_priority(struct thread *donating_thread, struct thread *receiving_thread) {
+  // Always add the donating thread to the receiving thread's donors list
+  list_insert_ordered(&receiving_thread->donors, &donating_thread->elem, compare_thread_priority, NULL);
+
+  // Update the receiving thread's donation_priority if necessary
   if (donating_thread->priority > receiving_thread->donation_priority) {
     receiving_thread->donation_priority = donating_thread->priority;
+  }
 
-    // Add the donating thread to the receiving thread's donors list
-    list_insert_ordered(&receiving_thread->donors, &donating_thread->elem, compare_thread_priority, NULL);
-
-    // If the receiving thread is also waiting for a lock, propagate the donation.
-    if (receiving_thread->waiting_for_lock != NULL) {
-      donate_priority(receiving_thread, receiving_thread->waiting_for_lock->holder);
-    }
+  // If the receiving thread is also waiting for a lock, propagate the donation.
+  if (receiving_thread->waiting_for_lock != NULL) {
+    donate_priority(receiving_thread, receiving_thread->waiting_for_lock->holder);
   }
 }
 

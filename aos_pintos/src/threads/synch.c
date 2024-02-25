@@ -32,6 +32,9 @@
 #include "threads/interrupt.h"
 #include "threads/thread.h"
 
+#define max(a,b) ((a) > (b) ? (a) : (b))
+
+
 /* Initializes semaphore SEMA to VALUE.  A semaphore is a
    nonnegative integer along with two atomic operators for
    manipulating it:
@@ -200,11 +203,14 @@ void lock_acquire (struct lock *lock)
 
   struct thread *current_thread = thread_current();
   if (lock->holder != NULL && current_thread->priority > lock->holder->priority) {
+    current_thread->waiting_for_lock = lock; // Keep track of the lock that the thread is waiting for
     lock->holder->donation_priority = current_thread->priority; // Donate priority
   }
 
   sema_down (&lock->semaphore);
   lock->holder = thread_current ();
+  current_thread->waiting_for_lock = NULL; // Clear the waiting_for_lock field after acquiring the lock
+  
 }
 
 /* Tries to acquires LOCK and returns true if successful or false
@@ -236,11 +242,31 @@ void lock_release (struct lock *lock)
   ASSERT (lock != NULL);
   ASSERT (lock_held_by_current_thread (lock));
 
-  lock->holder->donation_priority = lock->holder->priority; // Reset donation_priority
-  
+  // Remove the current thread from the donors list of all threads it donated to
+  struct list_elem *e;
+  for (e = list_begin (&lock->holder->donors); e != list_end (&lock->holder->donors); e = list_next (e)) {
+    struct thread *t = list_entry (e, struct thread, elem);
+    if (t->waiting_for_lock == lock) {
+      list_remove (&t->elem);
+    }
+  }
+
+  // Find the maximum priority from the remaining donations
+  int max_priority = lock->holder->priority;
+  for (e = list_begin (&lock->holder->donors); e != list_end (&lock->holder->donors); e = list_next (e)) {
+    struct thread *t = list_entry (e, struct thread, elem);
+    if (t->priority > max_priority) {
+      max_priority = t->priority;
+    }
+  }
+
+  // Reset donation_priority to the maximum of the thread's original priority and the maximum priority from the remaining donations
+  lock->holder->donation_priority = max(max_priority, lock->holder->priority);
+
   lock->holder = NULL;
   sema_up (&lock->semaphore);
 }
+
 
 /* Returns true if the current thread holds LOCK, false
    otherwise.  (Note that testing whether some other thread holds
