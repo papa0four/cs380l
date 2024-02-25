@@ -332,15 +332,32 @@ void thread_foreach (thread_action_func *func, void *aux)
 }
 
 /* Sets the current thread's priority to NEW_PRIORITY. */
-void thread_set_priority (int new_priority)
-{
-  thread_current ()->priority = new_priority;
+void thread_set_priority (int new_priority) {
+  struct thread *current_thread = thread_current();
+  current_thread->priority = new_priority;
+  
+  if (new_priority > current_thread->donation_priority) {
+    current_thread->donation_priority = new_priority;
+    
+    if (current_thread->waiting_for_lock != NULL) {
+      donate_priority(current_thread, current_thread->waiting_for_lock->holder);
+    }
+  }
+  
   list_sort (&ready_list, compare_thread_priority, NULL);
-  thread_yield(); //dev emma
+  thread_yield();
 }
 
-/* Returns the current thread's priority. */
-int thread_get_priority (void) { return thread_current ()->priority; }
+
+/* Returns the current thread's priority. In the presence of priority donation, returns the higher (donated) priority.. */
+int thread_get_priority (void) { 
+    struct thread *current_thread = thread_current();
+    if (current_thread->donation_priority > current_thread->priority) {
+      return current_thread->donation_priority;
+    } else {
+      return current_thread->priority;
+    }
+  }
 
 /* Sets the current thread's nice value to NICE. */
 void thread_set_nice (int nice UNUSED)
@@ -449,6 +466,7 @@ static void init_thread (struct thread *t, const char *name, int priority)
   strlcpy (t->name, name, sizeof t->name);
   t->stack = (uint8_t *) t + PGSIZE;
   t->priority = priority;
+  t->donation_priority = priority; // Initialize donation_priority
   t->magic = THREAD_MAGIC;
 
   old_level = intr_disable ();
@@ -566,6 +584,18 @@ static tid_t allocate_tid (void)
 
   return tid;
 }
+/*Donation Priority function*/
+void donate_priority(struct thread *donating_thread, struct thread *receiving_thread) {
+  if (donating_thread->priority > receiving_thread->donation_priority) {
+    receiving_thread->donation_priority = donating_thread->priority;
+    
+    // If the receiving thread is also waiting for a lock, propagate the donation.
+    if (receiving_thread->waiting_for_lock != NULL) {
+      donate_priority(receiving_thread, receiving_thread->waiting_for_lock->holder);
+    }
+  }
+}
+
 
 /* Offset of `stack' member within `struct thread'.
    Used by switch.S, which can't figure it out on its own. */

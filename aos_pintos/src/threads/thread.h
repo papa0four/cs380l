@@ -92,9 +92,14 @@ struct thread
   int priority;              /* Priority. */
   struct list_elem allelem;  /* List element for all threads list. */
   int64_t wakeup_time;  /* Time at which the thread should wake up. dev_emma*/
+  int donation_priority; /*Priority due to donation*/
+  struct lock* waiting_for_lock;
+
+
 
   /* Shared between thread.c and synch.c. */
   struct list_elem elem; /* List element. */
+
 
 #ifdef USERPROG
   /* Owned by userprog/process.c. */
@@ -109,6 +114,9 @@ struct thread
    If true, use multi-level feedback queue scheduler.
    Controlled by kernel command-line option "-o mlfqs". */
 extern bool thread_mlfqs;
+
+void donate_priority(struct thread *donating_thread, struct thread *receiving_thread); //dev_emma
+
 
 void thread_init (void);
 void thread_start (void);
@@ -143,4 +151,5 @@ int thread_get_load_avg (void);
 
 /*dev emma*/
 bool compare_thread_priority(const struct list_elem *a, const struct list_elem *b, void *aux UNUSED);
+
 #endif /* threads/thread.h */
