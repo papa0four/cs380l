@@ -95,14 +95,19 @@ struct thread
   /* Shared between thread.c and synch.c. */
   struct list_elem elem; /* List element. */
 
-  /* Addition for alarm clock */
-  /* Possibly shared between thread.c and devices/timer.c */
-  int64_t wake_up_tick; /* Tick count for thread wake up */
-
 #ifdef USERPROG
   /* Owned by userprog/process.c. */
   uint32_t *pagedir; /* Page directory. */
 #endif
+
+/* Shared between thread.c and timer.c */
+int64_t wake_up_ticks; /* wake up ticks member. */
+struct list_elem blocked_elem; /* blocked list element. */
+
+/* Shared between thread.c and synch.c. */
+int true_priority; /* original priority during donation. */
+struct list all_locks; /* all the locks held by the thread. */
+struct lock *lock_current; /* Current lock on thread. */
 
   /* Owned by thread.c. */
   unsigned magic; /* Detects stack overflow. */
@@ -119,7 +124,7 @@ void thread_start (void);
 void thread_tick (void);
 void thread_print_stats (void);
 
-/* Compares two threads' priorities. */
+/* Shared between thread.c and timer.c. */
 bool thread_cmp_priority (const struct list_elem *a, const struct list_elem *b, void *aux UNUSED);
 
 typedef void thread_func (void *aux);
@@ -135,12 +140,22 @@ const char *thread_name (void);
 void thread_exit (void) NO_RETURN;
 void thread_yield (void);
 
+/* A pre-conditional check to aid thread_yield. */
+void thread_try_yield (void);
+
 /* Performs some operation on thread t, given auxiliary data AUX. */
 typedef void thread_action_func (struct thread *t, void *aux);
 void thread_foreach (thread_action_func *, void *);
 
 int thread_get_priority (void);
 void thread_set_priority (int);
+
+/* Shared between thread.c and synch.c. */
+void thread_update_priority (struct thread *t);
+void thread_resort_ready_list (struct thread *t);
+
+/* Shared between thread.c and timer.c. */
+void thread_set_blocked (int64_t ticks);
 
 int thread_get_nice (void);
 void thread_set_nice (int);

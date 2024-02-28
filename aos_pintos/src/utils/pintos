@@ -40,7 +40,7 @@ prepare_scratch_disk ();
 find_disks ();
 run_vm ();
 finish_scratch_disk ();
-# sub SIGVTALRM;
+sub SIGVTALRM;
 
 exit 0;
 
