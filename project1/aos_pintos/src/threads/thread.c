@@ -75,6 +75,10 @@ static void *alloc_frame (struct thread *, size_t size);
 static void schedule (void);
 void thread_schedule_tail (struct thread *prev);
 static tid_t allocate_tid (void);
+static bool compare_priority (const struct list_elem *,
+                              const struct list_elem *, void *);
+static bool compare_wakeup_tick (const struct list_elem *,
+                                 const struct list_elem *, void *);
 
 /* Initializes the threading system by transforming the code
    that's currently running into a thread.  This can't work in
@@ -233,20 +237,15 @@ void thread_unblock (struct thread *t)
   enum intr_level old_level;
 
   ASSERT (is_thread (t));
+  struct thread *cur = thread_current ();
 
   old_level = intr_disable ();
   ASSERT (t->status == THREAD_BLOCKED);
-  list_push_back (&ready_list, &t->elem);
+  list_insert_ordered (&ready_list, &t->elem, compare_priority, NULL);
   t->status = THREAD_READY;
+  if (cur != idle_thread && cur->priority < t->priority)
+    thread_yield();
   intr_set_level (old_level);
-}
-
-bool compare_wakeup_tick (const struct list_elem *a, const struct list_elem *b,
-                          void *aux UNUSED)
-{
-  struct thread *t_a = list_entry (a, struct thread, elem);
-  struct thread *t_b = list_entry (b, struct thread, elem);
-  return t_a->wakeup_tick < t_b->wakeup_tick;
 }
 
 /* Puts the current thread to sleep until WAKEUP_TICK. */
@@ -338,7 +337,7 @@ void thread_yield (void)
 
   old_level = intr_disable ();
   if (cur != idle_thread)
-    list_push_back (&ready_list, &cur->elem);
+    list_insert_ordered (&ready_list, &cur->elem, compare_priority, NULL);
   cur->status = THREAD_READY;
   schedule ();
   intr_set_level (old_level);
@@ -363,6 +362,8 @@ void thread_foreach (thread_action_func *func, void *aux)
 void thread_set_priority (int new_priority)
 {
   thread_current ()->priority = new_priority;
+  list_sort(&ready_list, compare_priority, NULL);
+  thread_yield();
 }
 
 /* Returns the current thread's priority. */
@@ -585,6 +586,24 @@ static tid_t allocate_tid (void)
   lock_release (&tid_lock);
 
   return tid;
+}
+
+static bool compare_priority (const struct list_elem *a,
+                              const struct list_elem *b, void *aux UNUSED)
+{
+  struct thread *t_a = list_entry (a, struct thread, elem);
+  struct thread *t_b = list_entry (b, struct thread, elem);
+  return t_a->priority > t_b->priority;
+}
+
+static bool compare_wakeup_tick (const struct list_elem *a,
+                                 const struct list_elem *b, void *aux UNUSED)
+{
+  struct thread *t_a = list_entry (a, struct thread, elem);
+  struct thread *t_b = list_entry (b, struct thread, elem);
+  if (t_a->wakeup_tick == t_b->wakeup_tick)
+    return compare_priority (a, b, NULL);
+  return t_a->wakeup_tick < t_b->wakeup_tick;
 }
 
 /* Offset of `stack' member within `struct thread'.
