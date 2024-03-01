@@ -17,31 +17,8 @@
 #error TIMER_FREQ <= 1000 recommended
 #endif
 
-/* List of processes in THREAD_BLOCKED state, that is, processes
-   that are sleeping */
-static struct list sleeping_list; //dev_emma
-
-/* Sets the current thread to blocked state and schedules the next thread. */
-void thread_block(void); //dev_emma
-
-/* Transitions a thread from blocked state to ready state. */
-void thread_unblock(struct thread *); //dev_emma
-
-/* Function to wake up the sleeping threads */
-void thread_wakeup(void); //dev_emma
-
 /* Number of timer ticks since OS booted. */
 static int64_t ticks;
-
-/*dev_emma*/
-bool compare_wakeup_time(const struct list_elem *a, const struct list_elem *b, void *aux UNUSED);
-
-//dev_emma
-bool compare_wakeup_time(const struct list_elem *a, const struct list_elem *b, void *aux UNUSED) {
-  struct thread *t_a = list_entry(a, struct thread, elem);
-  struct thread *t_b = list_entry(b, struct thread, elem);
-  return t_a->wakeup_time < t_b->wakeup_time;
-}
 
 /* Number of loops per timer tick.
    Initialized by timer_calibrate(). */
@@ -59,8 +36,6 @@ void timer_init (void)
 {
   pit_configure_channel (0, 2, TIMER_FREQ);
   intr_register_ext (0x20, timer_interrupt, "8254 Timer");
-  list_init(&sleeping_list); //dev_emma
-
 }
 
 /* Calibrates loops_per_tick, used to implement brief delays. */
@@ -105,28 +80,19 @@ int64_t timer_elapsed (int64_t then) { return timer_ticks () - then; }
 
 /* Sleeps for approximately TICKS timer ticks.  Interrupts must
    be turned on. */
-/*void timer_sleep (int64_t ticks)
+void timer_sleep (int64_t ticks)
 {
-  int64_t start = timer_ticks ();
+  /* Initial value check of ticks. */
+  if (0 >= ticks)
+    return;
 
   ASSERT (intr_get_level () == INTR_ON);
-  while (timer_elapsed (start) < ticks)
-    thread_yield ();
-} */
-//dev_emma
-void timer_sleep (int64_t ticks) { 
-  int64_t start = timer_ticks ();
-  struct thread *cur = thread_current();
 
-  enum intr_level old_level;
-  old_level = intr_disable ();
-
-  /* Add to wait list and block the thread. */
-  cur->wakeup_time = start + ticks;
-  list_insert_ordered(&sleeping_list, &cur->elem, (list_less_func *) &compare_wakeup_time, NULL);
-  thread_block();
-
-  /* Re-enable interrupts. */
+  /* Student modified. */
+  /* Disable interrupts to allow for threads to be set to a 
+     THREAD_BLOCKED state for lateer wakeup. */
+  enum intr_level old_level = intr_disable ();
+  thread_set_blocked (ticks); // Sets thread to blocked state
   intr_set_level (old_level);
 }
 
@@ -175,27 +141,11 @@ void timer_print_stats (void)
   printf ("Timer: %" PRId64 " ticks\n", timer_ticks ());
 }
 
-/* Function to wake up the sleeping threads dev_emma*/
-void thread_wakeup(void) {
-  struct list_elem *e = list_begin(&sleeping_list);
-
-  /* As the list is ordered by the wakeup_time, we just need to check the first element */
-  while(e != list_end(&sleeping_list)) {
-    struct thread *t = list_entry(e, struct thread, elem);
-    if(t->wakeup_time > timer_ticks()) {
-      break;
-    }
-    e = list_remove(e);
-    thread_unblock(t);
-  }
-}
-
 /* Timer interrupt handler. */
 static void timer_interrupt (struct intr_frame *args UNUSED)
 {
   ticks++;
-  thread_tick ();
-  thread_wakeup();//dev_emma
+  thread_tick (); // modified in thread.c
 }
 
 /* Returns true if LOOPS iterations waits for more than one timer
