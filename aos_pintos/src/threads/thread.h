@@ -100,6 +100,7 @@ struct thread
   uint32_t *pagedir; /* Page directory. */
 #endif
 
+/* Student implemented ----------------------------------------- */
 /* Shared between thread.c and timer.c */
 int64_t wake_up_ticks; /* wake up ticks member. */
 struct list_elem blocked_elem; /* blocked list element. */
@@ -108,6 +109,7 @@ struct list_elem blocked_elem; /* blocked list element. */
 int true_priority; /* original priority during donation. */
 struct list all_locks; /* all the locks held by the thread. */
 struct lock *lock_current; /* Current lock on thread. */
+/* End student implemented ------------------------------------- */
 
   /* Owned by thread.c. */
   unsigned magic; /* Detects stack overflow. */
@@ -118,19 +120,32 @@ struct lock *lock_current; /* Current lock on thread. */
    Controlled by kernel command-line option "-o mlfqs". */
 extern bool thread_mlfqs;
 
+/* Minor midification made by student. */
 void thread_init (void);
 void thread_start (void);
 
+/* Significant modification made by student. */
 void thread_tick (void);
+
 void thread_print_stats (void);
 
-/* Shared between thread.c and timer.c. */
+/* Student implemented thread_cmp_priority. */
+/* Shared between thread.c and timer.c.
+   @brief - performs a comparison between two thread priorities.
+   @param (const struct list_elem *) a - a pointer to a list element containing a thread.
+   @param (const struct list_elem *) b - a pointer to a list element containing a thread.
+   @param (void *) aux UNUSED - a pointer to a value unused (prototype similar to Project 0).
+   @return (bool) - returns true if element b's priority is greater than or equal to element
+                    a's priority, otherwise, returns false.
+*/
 bool thread_cmp_priority (const struct list_elem *a, const struct list_elem *b, void *aux UNUSED);
 
 typedef void thread_func (void *aux);
 tid_t thread_create (const char *name, int priority, thread_func *, void *);
 
 void thread_block (void);
+
+/* Minor modification made by student. */
 void thread_unblock (struct thread *);
 
 struct thread *thread_current (void);
@@ -138,9 +153,19 @@ tid_t thread_tid (void);
 const char *thread_name (void);
 
 void thread_exit (void) NO_RETURN;
+
+/* Minor modification made by student. */
 void thread_yield (void);
 
-/* A pre-conditional check to aid thread_yield. */
+/* Student implemented thread_try_yield. */
+/* A pre-conditional check to aid thread_yield.
+   @brief - The purpose of this function is to check if the current thread should yield the
+            CPU to another thread that is ready to run and has higher priority. This occurs
+            by comparing priorities between the current thread and the highest priority
+            thread within the ready list.
+   @param (void) - N/A
+   @return (void) - N/A
+*/
 void thread_try_yield (void);
 
 /* Performs some operation on thread t, given auxiliary data AUX. */
@@ -148,13 +173,40 @@ typedef void thread_action_func (struct thread *t, void *aux);
 void thread_foreach (thread_action_func *, void *);
 
 int thread_get_priority (void);
+
+/* Modified by student. */
 void thread_set_priority (int);
 
 /* Shared between thread.c and synch.c. */
+/* Student implemented thread_update_priority
+   @brief - The purpose of this function is to update the effective priority of a given
+            thread based upon its own true_priority member when compared with the highest
+            priority of all threads within the all_locks list in which the current thread
+            holds the lock for.
+   @param (struct thread *) t - a pointer to the current thread whose priority requires updating
+   @return (void) - N/A
+*/
 void thread_update_priority (struct thread *t);
+
+/* Student implemented thread_resort_ready_list
+   @brief - The purpose of this function is to update the position of a thread within
+            the ready_list based upon the thread priority value, ensuring that the list
+            remains sorted according to thread priority.
+   @param (struct thread *) t - a pointer to the current thread to be repositioned within the
+            ready_list.
+   @return (void) - N/A
+*/
 void thread_resort_ready_list (struct thread *t);
 
 /* Shared between thread.c and timer.c. */
+/* Student implemented thread_set_blocked.
+   @brief - The purpose of this function is to transition the current thread's status from
+            THREAD_READY to THREAD_BLOCKED, moving the thread from a runnable status and
+            placing the thread into a blocked state until certain conditions are met.
+   @param (int64_t) ticks - the number of timer ticks indicating the moment a thread 
+            should be considered for wake up from its blocked state.
+   @return (void) - N/A
+*/
 void thread_set_blocked (int64_t ticks);
 
 int thread_get_nice (void);
