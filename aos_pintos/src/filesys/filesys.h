@@ -2,7 +2,9 @@
 #define FILESYS_FILESYS_H
 
 #include <stdbool.h>
+#include <stddef.h>
 #include "filesys/off_t.h"
+#include "devices/block.h"
 
 /* Sectors of system file inodes. */
 #define FREE_MAP_SECTOR 0 /* Free map file inode sector. */
@@ -10,6 +12,18 @@
 
 /* Block device that contains the file system. */
 extern struct block *fs_device;
+
+/* Count of allocated blocks. */
+typedef uint32_t blkcnt_t;
+
+/* Struct containing file status. */
+struct stat
+{
+    size_t logical_size;            /* The logical file size of a file. */
+    size_t physical_size;           /* The physical file size of a file. */
+    block_sector_t inode_number;    /* The inode number of a file. */
+    blkcnt_t blocks;                /* Number of blocks allocated. */
+};
 
 void filesys_init (bool format);
 void filesys_done (void);

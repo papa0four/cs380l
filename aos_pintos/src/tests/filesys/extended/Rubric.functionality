@@ -24,3 +24,7 @@ Functionality of extended file system:
 
 - Test writing from multiple processes.
 5	syn-rw
+
+- Test stat() and sparse files
+1	check-stat
+1	check-sparse

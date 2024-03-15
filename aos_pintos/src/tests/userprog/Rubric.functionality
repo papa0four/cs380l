@@ -44,10 +44,10 @@ Functionality of system calls:
 3	halt
 
 - Test "symlink" system call.
-5   symlink-bad-target
-5   symlink-check
-5   symlink-remove
-10  symlink-read
+5	symlink-bad-target
+5	symlink-check
+5	symlink-remove
+10	symlink-read
 
 - Test recursive execution of user programs.
 15	multi-recurse

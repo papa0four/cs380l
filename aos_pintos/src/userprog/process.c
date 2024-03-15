@@ -27,6 +27,9 @@ static bool load (const char *cmdline, void (**eip) (void), void **esp);
    thread id, or TID_ERROR if the thread cannot be created. */
 tid_t process_execute (const char *file_name)
 {
+  if (NULL == file_name)
+    return -1;
+
   char *fn_copy;
   tid_t tid;
 
@@ -37,8 +40,16 @@ tid_t process_execute (const char *file_name)
     return TID_ERROR;
   strlcpy (fn_copy, file_name, PGSIZE);
 
+  /* User Modification */
+  // Tokenize the filename and separate command and arguments
+  char *save_ptr = NULL;
+  char *cmd_name = strtok_r (fn_copy, " ", &save_ptr);
+  if (NULL == cmd_name)
+    return -1;
+
   /* Create a new thread to execute FILE_NAME. */
-  tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy);
+  // tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy);
+  tid = thread_create (cmd_name, PRI_DEFAULT, start_process, save_ptr);
   if (tid == TID_ERROR)
     palloc_free_page (fn_copy);
   return tid;
@@ -51,6 +62,8 @@ static void start_process (void *file_name_)
   char *file_name = file_name_;
   struct intr_frame if_;
   bool success;
+
+  printf("file_name_: %s\n", file_name);
 
   /* Initialize interrupt frame and load executable. */
   memset (&if_, 0, sizeof if_);
@@ -83,7 +96,10 @@ static void start_process (void *file_name_)
 
    This function will be implemented in problem 2-2.  For now, it
    does nothing. */
-int process_wait (tid_t child_tid UNUSED) { return -1; }
+int process_wait (tid_t child_tid UNUSED)
+{
+  return -1;
+}
 
 /* Free the current process's resources. */
 void process_exit (void)
@@ -424,7 +440,7 @@ static bool setup_stack (void **esp)
     {
       success = install_page (((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true);
       if (success)
-        *esp = PHYS_BASE;
+        *esp = (uint8_t *) PHYS_BASE - 12;
       else
         palloc_free_page (kpage);
     }
