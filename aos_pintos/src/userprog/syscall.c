@@ -32,6 +32,7 @@ int syscall_write (int filedes, const void * buffer, unsigned byte_size);
 void syscall_seek (int filedes, unsigned new_position);
 unsigned syscall_tell(int fildes);
 void syscall_close(int filedes);
+bool syscall_symlink (char *target, char *linkpath);
 void validate_ptr (const void* vaddr);
 void validate_str (const void* str);
 void validate_buffer (const void* buf, unsigned byte_size);
@@ -203,6 +204,38 @@ syscall_handler (struct intr_frame *f UNUSED)
       /* syscall_close(int filedes) */
       syscall_close(arg[0]);
       break;
+    
+     case SYS_SYMLINK:
+      {
+        // Get the arguments from the stack
+        char *target = *(char **)((char*)f->esp + 4);
+        char *linkpath = *(char **)((char*)f->esp + 8);
+
+
+        // Check if the pointers are valid
+        if (!is_user_vaddr(target) || !is_user_vaddr(linkpath))
+         { f->eax = -1;
+          break;
+         }
+
+        //check if target is valid
+         struct file *target_file = filesys_open(target);
+         if (target_file == NULL)
+         { f->eax = -1;
+          break;
+         }
+
+        // Create the symbolic link
+        bool success = filesys_symlink(target, linkpath);
+
+        // If the symbolic link was created successfully, return 0. Otherwise, return -1.
+        if (success)
+          f->eax = 0;
+        else
+          f->eax = -1;
+
+        break;
+      }
       
     default:
       break;
@@ -562,6 +595,27 @@ get_file (int filedes)
     }
   }
   return NULL; // nothing found
+}
+
+/*create symbolic link*/
+bool
+syscall_symlink (char *target, char *linkpath)
+{
+  // Check if the pointers are valid
+  if (!is_user_vaddr(target) || !is_user_vaddr(linkpath))
+    return false;
+
+  // Check if the target is a valid file
+  struct file *target_file = filesys_open(target);
+  if (target_file == NULL)
+    return false;
+
+  file_close(target_file);
+
+  // Create the symbolic link
+  bool success = filesys_symlink(target, linkpath);
+
+  return success;
 }
 
 
