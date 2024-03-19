@@ -483,6 +483,18 @@ validate_ptr (const void *vaddr)
       // virtual memory address is not reserved for us (out of bound)
       syscall_exit(ERROR);
     }
+    // Cast the void pointer to a char pointer for the arithmetic operation
+    char *char_vaddr = (char *) vaddr;
+
+    // Check the next 3 bytes
+   for (int i = 0; i < 4; i++) 
+    {
+        void *addr = char_vaddr + i;
+        if (!is_user_vaddr(addr) || pagedir_get_page(thread_current()->pagedir, addr) == NULL) 
+        {
+            syscall_exit(ERROR);
+        }
+    }
 }
 
 /* function to check if string is valid */
