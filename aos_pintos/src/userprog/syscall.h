@@ -1,58 +1,41 @@
 #ifndef USERPROG_SYSCALL_H
 #define USERPROG_SYSCALL_H
 
-#include <stdbool.h>
-#include <stdlib.h>
-#include "threads/thread.h"
 #include "threads/synch.h"
-
-/* Process identifier. */
-typedef int pid_t;
-#define PID_ERROR ((pid_t) -1)
-
-/* Maximum characters in a filename written by readdir(). */
-#define READDIR_MAX_LEN 14
-
-/* Typical return values from main() and arguments to exit(). */
-#define EXIT_SUCCESS 0 /* Successful execution. */
-#define EXIT_FAILURE 1 /* Unsuccessful execution. */
-
-/* Value to conduct integer pointer arithmetic */
-#define INT_SZ 4 /* integers are 32 bits or 4 bytes on a 32-bit system */
-
-/* System indentifier. */
-#define SYS_ERROR -1
-
-/* The lock for file handling */
-struct lock lock_fd;
-
-/* Struct to hold data for the file descriptor list in thread */
-struct fd_elem
-{
-    struct file * file_current;     /* a pointer to the current file */
-    struct list_elem e;             /* list element to create list_fd entries */
-    int fd;                         /* the actual file descriptor value */
-};
-
+#include "threads/thread.h"
 void syscall_init (void);
 
-/* User Implemented per 3.3.4 System Calls */
-void halt (void);
-void exit (int status);
-pid_t exec (const char *cmd_line);
-int wait (pid_t pid);
-bool create (const char * file, unsigned initial_size);
-bool remove (const char * file);
-int open (const char * file);
-int filesize (int fd);
-int read (int fd, void *buffer, unsigned size);
-int write (int fd, const void *buffer, unsigned size);
-void seek (int fd, unsigned position);
-unsigned tell (int fd);
-void close (int fd);
-int symlink (char *target, char *linkpath);
+#define ERROR -1
+#define NOT_LOADED 0
+#define LOADED 1
+#define LOAD_FAIL 2
+#define CLOSE_ALL_FD -1
+#define USER_VADDR_BOTTOM ((void *) 0x08048000)
 
-/* User implemented functions */
-struct child *get_child (pid_t pid, struct list *list_children);
+struct child_process {
+  int pid;
+  int load_status;
+  int wait;
+  int exit;
+  int status;
+  struct semaphore load_sema;
+  struct semaphore exit_sema;
+  struct list_elem elem;
+};
 
+struct process_file {
+    struct file *file;
+    int fd;
+    struct list_elem elem;
+};
+
+struct lock file_system_lock;
+
+int getpage_ptr (const void *vaddr);
+struct child_process* find_child_process (int pid);
+void remove_child_process (struct child_process *child);
+void remove_all_child_processes (void);
+struct file* get_file(int filedes);
+void process_close_file (int file_descriptor);
+void syscall_exit (int status);
 #endif /* userprog/syscall.h */

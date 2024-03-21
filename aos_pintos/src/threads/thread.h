@@ -4,35 +4,26 @@
 #include <debug.h>
 #include <list.h>
 #include <stdint.h>
-#include "threads/synch.h"
+#include "userprog/syscall.h"
 
 /* States in a thread's life cycle. */
 enum thread_status
-{
-  THREAD_RUNNING, /* Running thread. */
-  THREAD_READY,   /* Not running but ready to run. */
-  THREAD_BLOCKED, /* Waiting for an event to trigger. */
-  THREAD_DYING    /* About to be destroyed. */
-};
-
-/* Unser implemented for child processes */
-#define CHILD_INIT -1 /* Initial child process status */
-enum child_status
-{
-   CHILD_KILLED, /* Child process was killed */
-   CHILD_EXITED, /* Child process has exited */
-   CHILD_ALIVE, /* Child process is alive */
-};
+  {
+    THREAD_RUNNING,     /* Running thread. */
+    THREAD_READY,       /* Not running but ready to run. */
+    THREAD_BLOCKED,     /* Waiting for an event to trigger. */
+    THREAD_DYING        /* About to be destroyed. */
+  };
 
 /* Thread identifier type.
    You can redefine this to whatever type you like. */
 typedef int tid_t;
-#define TID_ERROR ((tid_t) -1) /* Error value for tid_t. */
+#define TID_ERROR ((tid_t) -1)          /* Error value for tid_t. */
 
 /* Thread priorities. */
-#define PRI_MIN 0      /* Lowest priority. */
-#define PRI_DEFAULT 31 /* Default priority. */
-#define PRI_MAX 63     /* Highest priority. */
+#define PRI_MIN 0                       /* Lowest priority. */
+#define PRI_DEFAULT 31                  /* Default priority. */
+#define PRI_MAX 63                      /* Highest priority. */
 
 /* A kernel thread or user process.
 
@@ -83,9 +74,7 @@ typedef int tid_t;
    an assertion failure in thread_current(), which checks that
    the `magic' member of the running thread's `struct thread' is
    set to THREAD_MAGIC.  Stack overflow will normally change this
-   value, triggering the assertion.  (So don't add elements below
-   THREAD_MAGIC.)
-*/
+   value, triggering the assertion. */
 /* The `elem' member has a dual purpose.  It can be an element in
    the run queue (thread.c), or it can be an element in a
    semaphore wait list (synch.c).  It can be used these two ways
@@ -93,49 +82,35 @@ typedef int tid_t;
    ready state is on the run queue, whereas only a thread in the
    blocked state is on a semaphore wait list. */
 struct thread
-{
-  /* Owned by thread.c. */
-  tid_t tid;                 /* Thread identifier. */
-  enum thread_status status; /* Thread state. */
-  char name[16];             /* Name (for debugging purposes). */
-  uint8_t *stack;            /* Saved stack pointer. */
-  int priority;              /* Priority. */
-  struct list_elem allelem;  /* List element for all threads list. */
+  {
+      /* Owned by thread.c. */
+      tid_t tid;                          /* Thread identifier. */
+      enum thread_status status;          /* Thread state. */
+      char name[16];                      /* Name (for debugging purposes). */
+      uint8_t *stack;                     /* Saved stack pointer. */
+      int priority;                       /* Priority. */
+      struct list_elem allelem;           /* List element for all threads list. */
 
-  /* Shared between thread.c and synch.c. */
-  struct list_elem elem; /* List element. */
+      /* Shared between thread.c and synch.c. */
+      struct list_elem elem;              /* List element. */
 
-#ifdef USERPROG
-  /* Owned by userprog/process.c. */
-  uint32_t *pagedir; /* Page directory. */
-#endif
+   #ifdef USERPROG
+      /* Owned by userprog/process.c. */
+      uint32_t *pagedir;                  /* Page directory. */
+   #endif
 
-/* Owned by syscall/process.c */
-struct list list_children;    /* list of children processes to parent thread */
-struct thread *parent;        /* pointer to the parent thread */
-struct semaphore sema_exec;   /* semaphore wait for child process execution */
-struct semaphore sema_wait;   /* semaphore to allow child process to exit */
+      /* Shared between syscall/process.c */
+      struct list             file_list;      // list of files
+      struct list             child_list;     // list of child processes
+      struct list             lock_list;      // use to keep track of locks the thread holds      
+      struct child_process    *child;         // point to child process
+      struct file             *executable;    // use for denying writes to executables
+      int                     fd;             // file descriptor    
+      tid_t                   parent;         // id of the parent
 
-/* Owned by syscall/filesys.c */
-struct list list_fd;          /* list of file descriptors. */
-struct file *file_executed;   /* a pointer to the executed file held by the process */
-int file_sz;                  /* size of the file */
-
-  /* Owned by thread.c. */
-  unsigned magic; /* Detects stack overflow. */
-};
-
-/* User implemented for syscalls and processes */
-struct child
-{
-   struct list_elem child_elem;  /* list element to add child process */
-   struct thread *child;         /* pointer to the child process */
-   int exit_status;              /* child process exit status */
-   int status;                   /* current status of child process */
-   int pid;                      /* pid of the child process */
-   bool load_status;             /* determine if load call succeeded */
-   bool wait_status;             /* determine if wait was called */
-};
+      /* Owned by thread.c. */
+      unsigned magic;                     /* Detects stack overflow. */
+   };
 
 /* If false (default), use round-robin scheduler.
    If true, use multi-level feedback queue scheduler.
@@ -173,4 +148,7 @@ void thread_set_nice (int);
 int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
 
+int thread_alive (int pid);
+struct child_process* child_process_insert (int pid);
+void thread_lock_release (void);
 #endif /* threads/thread.h */
