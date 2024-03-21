@@ -1,6 +1,8 @@
 #include "userprog/syscall.h"
 #include <stdio.h>
+#include <stdbool.h>
 #include <syscall-nr.h>
+#include "syscall.h"
 #include "threads/interrupt.h"
 #include "threads/thread.h"
 #include "threads/malloc.h"
@@ -14,8 +16,12 @@
 #include "filesys/file.h"
 #include "filesys/filesys.h"
 
-#define MAX_ARGS 3
+#define ARG1      1
+#define ARG2      2
+#define ARG3      3
+#define MAX_ARGS  3
 
+typedef int pid_t;
 
 static void syscall_handler (struct intr_frame *);
 int add_file (struct file *file_name);
@@ -32,7 +38,6 @@ int syscall_write (int filedes, const void * buffer, unsigned byte_size);
 void syscall_seek (int filedes, unsigned new_position);
 unsigned syscall_tell(int fildes);
 void syscall_close(int filedes);
-bool syscall_symlink (char *target, char *linkpath);
 void validate_ptr (const void* vaddr);
 void validate_str (const void* str);
 void validate_buffer (const void* buf, unsigned byte_size);
@@ -44,7 +49,7 @@ bool FILE_LOCK_INIT = false;
  * It handles the set up for system call operations.
  */
 void
-syscall_init (void) 
+syscall_init (void)
 {
   intr_register_int (0x30, 3, INTR_ON, syscall_handler, "syscall");
 }
@@ -63,7 +68,7 @@ syscall_handler (struct intr_frame *f UNUSED)
     FILE_LOCK_INIT = true;
   }
   
-  int arg[MAX_ARGS];
+  int argv[MAX_ARGS] = { 0 };
   int esp = getpage_ptr((const void *) f->esp);
   
   switch (* (int *) esp)
@@ -73,136 +78,110 @@ syscall_handler (struct intr_frame *f UNUSED)
       break;
       
     case SYS_EXIT:
-      // fill arg with the amount of arguments needed
-      get_args(f, &arg[0], 1);
-      syscall_exit(arg[0]);
+      /* Populate argv with required arguments */
+      get_args (f, &argv[0], ARG1);
+      syscall_exit (argv[0]);
       break;
       
     case SYS_EXEC:
-      // fill arg with the amount of arguments needed
-      get_args(f, &arg[0], 1);
-      
-      // check if command line is valid
-      validate_str((const void*)arg[0]);
-      
-      // get page pointer
-      arg[0] = getpage_ptr((const void *)arg[0]);
-      /* syscall_exec(const char* cmdline) */
-      f->eax = syscall_exec((const char*)arg[0]); // execute the command line
+      /* Populate argv with required arguments */
+      get_args (f, &argv[0], ARG1);
+      /* Check command line validity */
+      validate_str ((const void *) argv[0]);
+      /* Retrieve pointer to the page */
+      argv[0] = getpage_ptr ((const void *) argv[0]);
+      /* set return value and execute command */
+      f->eax = syscall_exec ((const void *) argv[0]);
       break;
       
     case SYS_WAIT:
-      // fill arg with the amount of arguments needed
-      get_args(f, &arg[0], 1);
-      f->eax = syscall_wait(arg[0]);
+      /* Populate argv with required arguments */
+      get_args (f, &argv[0], ARG1);
+      /* Set return value and execute command */
+      f->eax = syscall_wait (argv[0]);
       break;
       
     case SYS_CREATE:
-      // fill arg with the amount of arguments needed
-      get_args(f, &arg[0], 2);
-      
-      //check if command line is valid
-      validate_str((const void *)arg[0]);
-      
-      // get page pointer
-      arg[0] = getpage_ptr((const void *) arg[0]);
-      
-      /* syscall_create(const char* file_name, unsigned starting_size) */
-      f->eax = syscall_create((const char *)arg[0], (unsigned)arg[1]);  // create this file
+      /* Populate argv with required arguments */
+      get_args (f, &argv[0], ARG2);
+      /* Check command line validity */
+      validate_str ((const void *) argv[0]);
+      /* Retrieve pointer to the page */
+      argv[0] = getpage_ptr ((const void *) argv[0]);
+      /* set return value and execute command */
+      f->eax = syscall_create ((const char *) argv[0], (unsigned) argv[1]);
       break;
       
     case SYS_REMOVE:
-      // fill arg with the amount of arguments needed
-      get_args(f, &arg[0], 1);
-      
-      /* check if command line is valid */
-      validate_str((const void*)arg[0]);
-      
-      // get page pointer
-      arg[0] = getpage_ptr((const void *) arg[0]);
-      
-      /* syscall_remove(const char* file_name) */
-      f->eax = syscall_remove((const char *)arg[0]);  // remove this file
+      /* Populate argv with required arguments */
+      get_args (f, &argv[0], ARG1);
+      /* Check command line validity */
+      validate_str ((const void*)argv[0]);
+      /* Retrieve pointer to the page */
+      argv[0] = getpage_ptr ((const void *) argv[0]);
+      /* Set return value and execute command */
+      f->eax = syscall_remove ((const char *)argv[0]);
       break;
       
     case SYS_OPEN:
-      // fill arg with amount of arguments needed
-      get_args(f, &arg[0], 1);
-      
-      /* Check if command line is valid.
-       * We do not want to open junk which can cause a crash 
-       */
-       validate_str((const void*)arg[0]);
-     
-     // get page pointer
-      arg[0] = getpage_ptr((const void *)arg[0]);
-      
-      /* syscall_open(int filedes) */
-      f->eax = syscall_open((const char *)arg[0]);  // open this file
+      /* Populate argv with required arguments */
+      get_args (f, &argv[0], ARG1);
+      /* Check command line validity */
+       validate_str((const void*)argv[0]);
+      /* Retrieve pointer to the page */
+      argv[0] = getpage_ptr((const void *)argv[0]);
+      /* Set return value and execute command */
+      f->eax = syscall_open((const char *)argv[0]);
       break;
       
     case SYS_FILESIZE:
-      // fill arg with amount of arguments needed
-      get_args(f, &arg[0], 1);
-      
-      /* syscall_filesize (const char *file_name) */
-      f->eax = syscall_filesize(arg[0]);  // obtain file size
+      /* Populate argv with the required arguments */
+      get_args (f, &argv[0], ARG1);
+      /* Set return value and execute command */
+      f->eax = syscall_filesize(argv[0]);
       break;
       
     case SYS_READ:
-      // fill arg with the amount of arguments needed
-      get_args(f, &arg[0], 3);
-      
-      /* Check if the buffer is valid.
-       * We do not want to mess with a buffer that is out of our
-       * reserved virtual memory 
-       */
-       validate_buffer((const void*)arg[1], (unsigned)arg[2]);
-       
-      // get page pointer
-      arg[1] = getpage_ptr((const void *)arg[1]); 
-      
-      /* syscall_write (int filedes, const void * buffer, unsigned bytes)*/
-      f->eax = syscall_read(arg[0], (void *) arg[1], (unsigned) arg[2]);
+      /* Populate argv with required arguments */
+      get_args (f, &argv[0], ARG3);
+      /* Checl buffer validity */
+      validate_buffer ((const void*) argv[1], (unsigned) argv[2]);
+      /* Retrieve pointer to the page */
+      argv[1] = getpage_ptr ((const void *) argv[1]); 
+      /* Set the return value and execute command */
+      f->eax = syscall_read (argv[0], (void *) argv[1], (unsigned) argv[2]);
       break;
       
     case SYS_WRITE:
-      
-      // fill arg with the amount of arguments needed
-      get_args(f, &arg[0], 3);
-      
-      /* Check if the buffer is valid.
-       * We do not want to mess with a buffer that is out of our
-       * reserved virtual memory 
-       */
-       validate_buffer((const void*)arg[1], (unsigned)arg[2]);
-       
-      // get page pointer
-      arg[1] = getpage_ptr((const void *)arg[1]); 
-      
-      /* syscall_write (int filedes, const void * buffer, unsigned bytes)*/
-      f->eax = syscall_write(arg[0], (const void *) arg[1], (unsigned) arg[2]);
+      /* Populate argv with required arguments */
+      get_args (f, &argv[0], ARG3);
+      /* Check buffer validity */
+      validate_buffer ((const void*) argv[1], (unsigned) argv[2]);
+      /* Retrieve pointer to the page */
+      argv[1] = getpage_ptr ((const void *) argv[1]); 
+      /* Set the return value and execute command */
+      f->eax = syscall_write (argv[0], (const void *) argv[1], (unsigned) argv[2]);
       break;
       
     case SYS_SEEK:
-      // fill arg with the amount of arguments needed
-      get_args(f, &arg[0], 2);
-      /* syscall_seek(int filedes, unsigned new_position) */
-      syscall_seek(arg[0], (unsigned)arg[1]);
+      /* Populate argv with required arguments */
+      get_args (f, &argv[0], ARG2);
+      /* Execute command */
+      syscall_seek (argv[0], (unsigned)argv[1]);
       break;
       
     case SYS_TELL:
-      // fill arg with the amount of arguments needed
-      get_args(f, &arg[0], 1);
-      /* syscall_tell(int filedes) */
-      f->eax = syscall_tell(arg[0]);
+      /* Populate argv with required arguments */
+      get_args (f, &argv[0], ARG1);
+      /* Set return value and execute command */
+      f->eax = syscall_tell (argv[0]);
       break;
     
     case SYS_CLOSE:
       // fill arg with the amount of arguments needed
-      get_args (f, &arg[0], 1);
+      get_args (f, &argv[0], ARG1);
       /* syscall_close(int filedes) */
-      syscall_close(arg[0]);
+      syscall_close(argv[0]);
       break;
     
      case SYS_SYMLINK:
@@ -240,6 +219,7 @@ syscall_handler (struct intr_frame *f UNUSED)
       }
       
     default:
+      f->eax = ERROR;
       break;
   }
 }
@@ -584,6 +564,7 @@ add_file (struct file *file_name)
   struct process_file *process_file_ptr = malloc(sizeof(struct process_file));
   if (!process_file_ptr)
   {
+    file_close (file_name);
     return ERROR;
   }
   process_file_ptr->file = file_name;
@@ -601,11 +582,22 @@ get_file (int filedes)
   struct thread *t = thread_current();
   struct list_elem* next;
   struct list_elem* e = list_begin(&t->file_list);
+  if (NULL == e)
+  {
+    process_close_file (filedes);
+    return NULL;
+  }
   
   for (; e != list_end(&t->file_list); e = next)
   {
     next = list_next(e);
     struct process_file *process_file_ptr = list_entry(e, struct process_file, elem);
+    if (NULL == process_file_ptr)
+    {
+      file_close (process_file_ptr->file);
+      return NULL;
+    }
+    
     if (filedes == process_file_ptr->fd)
     {
       return process_file_ptr->file;
@@ -613,28 +605,6 @@ get_file (int filedes)
   }
   return NULL; // nothing found
 }
-
-/*create symbolic link*/
-bool
-syscall_symlink (char *target, char *linkpath)
-{
-  // Check if the pointers are valid
-  if (!is_user_vaddr(target) || !is_user_vaddr(linkpath))
-    return false;
-
-  // Check if the target is a valid file
-  struct file *target_file = filesys_open(target);
-  if (target_file == NULL)
-    return false;
-
-  file_close(target_file);
-
-  // Create the symbolic link
-  bool success = filesys_symlink(target, linkpath);
-
-  return success;
-}
-
 
 /* close the desired file descriptor */
 void
