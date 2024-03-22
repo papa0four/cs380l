@@ -1,4 +1,4 @@
-#include "userprog/process.h"
+#include "process.h"
 #include <debug.h>
 #include <inttypes.h>
 #include <round.h>
@@ -18,7 +18,7 @@
 #include "threads/thread.h"
 #include "threads/vaddr.h"
 #include "threads/malloc.h"
-#include "userprog/syscall.h"
+#include "syscall.h"
 
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp, char **saveptr);
@@ -375,7 +375,7 @@ load (const char *file_name, void (**eip) (void), void **esp, char **saveptr)
 
 /* load() helpers. */
 
-static bool install_page (void *upage, void *kpage, bool writable);
+//static bool install_page (void *upage, void *kpage, bool writable);
 
 /* Checks whether PHDR describes a valid, loadable segment in
    FILE and returns true if so, false otherwise. */
@@ -575,8 +575,7 @@ memcpy(*esp, &argv[argc], sizeof (void*));
    with palloc_get_page().
    Returns true on success, false if UPAGE is already mapped or
    if memory allocation fails. */
-static bool
-install_page (void *upage, void *kpage, bool writable)
+bool install_page (void *upage, void *kpage, bool writable)
 {
   struct thread *t = thread_current ();
 

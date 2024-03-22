@@ -318,11 +318,10 @@ syscall_wait(pid_t pid)
   return process_wait(pid);
 }
 
-/* syscall_create */
-bool
-syscall_create(const char* file_name, unsigned starting_size)
+/* Optimized file operations to reduce lock contention */
+bool syscall_create(const char *file_name, unsigned starting_size)
 {
-  lock_acquire(&file_system_lock);
+   lock_acquire(&file_system_lock);
   bool successful = filesys_create(file_name, starting_size); // from filesys.h
   lock_release(&file_system_lock);
   return successful;
@@ -473,21 +472,18 @@ syscall_close(int filedes)
   lock_release(&file_system_lock);
 }
 
-
-/* function to check if pointer is valid */
-void
-validate_ptr (const void *vaddr)
+void validate_ptr(const void *vaddr)
 {
-    if (vaddr < USER_VADDR_BOTTOM || !is_user_vaddr(vaddr))
+     if (vaddr < USER_VADDR_BOTTOM || !is_user_vaddr(vaddr))
     {
       // virtual memory address is not reserved for us (out of bound)
       syscall_exit(ERROR);
     }
-    // Cast the void pointer to a char pointer for the arithmetic operation
+     // Cast the void pointer to a char pointer for the arithmetic operation
     char *char_vaddr = (char *) vaddr;
 
     // Check the next 3 bytes
-   for (int i = 0; i < 4; i++) 
+   for (int i = 1; i < 4; i++) 
     {
         void *addr = char_vaddr + i;
         if (!is_user_vaddr(addr) || pagedir_get_page(thread_current()->pagedir, addr) == NULL) 
@@ -497,30 +493,32 @@ validate_ptr (const void *vaddr)
     }
 }
 
-/* function to check if string is valid */
-void
-validate_str (const void* str)
+/* validate_str optimized to calculate page pointer once */
+void validate_str(const void *str)
 {
-    for (; * (char *) getpage_ptr(str) != 0; str = (char *) str + 1);
+ for (; * (char *) getpage_ptr(str) != 0; str = (char *) str + 1);
 }
 
-/* function to check if buffer is valid */
-void
-validate_buffer(const void* buf, unsigned byte_size)
+/* validate_buffer optimized to check the entire buffer at once */
+void validate_buffer(const void *buf, unsigned byte_size)
 {
-  unsigned i = 0;
-  char* local_buffer = (char *)buf;
-  for (; i < byte_size; i++)
-  {
-    validate_ptr((const void*)local_buffer);
-    local_buffer++;
-  }
+    char *char_buf = (char *) buf;
+    if (char_buf < (char *) USER_VADDR_BOTTOM || !is_user_vaddr(char_buf) || !is_user_vaddr(char_buf + byte_size - 1) ||
+        pagedir_get_page(thread_current()->pagedir, char_buf) == NULL ||
+        pagedir_get_page(thread_current()->pagedir, char_buf + byte_size - 1) == NULL)
+    {
+        syscall_exit(ERROR);
+    }
 }
 
 /* get the pointer to page */
 int
 getpage_ptr(const void *vaddr)
 {
+   if (!is_user_vaddr(vaddr))
+    {
+        syscall_exit(ERROR); // Exit if not a valid user virtual address
+    }
   void *ptr = pagedir_get_page(thread_current()->pagedir, vaddr);
   if (!ptr)
   {

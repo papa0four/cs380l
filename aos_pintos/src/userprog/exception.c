@@ -6,14 +6,16 @@
 #include "threads/thread.h"
 #include <user/syscall.h>
 #include "syscall.h"
-//#include "syscall.c"
+#include "threads/palloc.h"
+#include "threads/vaddr.h"
+#include "pagedir.h"
+#include "process.h"
 
 /* Number of page faults processed. */
 static long long page_fault_cnt;
 
 static void kill (struct intr_frame *);
 static void page_fault (struct intr_frame *);
-
 /* Registers handlers for interrupts that can be caused by user
    programs.
 
@@ -91,8 +93,7 @@ kill (struct intr_frame *f)
          expected.  Kill the user process.  */
       printf ("%s: dying due to interrupt %#04x (%s).\n",
               thread_name (), f->vec_no, intr_name (f->vec_no));
-      intr_dump_frame (f);
-      //thread_exit (); 
+      intr_dump_frame (f); 
       syscall_exit(-1);
       break;
       
@@ -158,6 +159,25 @@ page_fault (struct intr_frame *f)
         syscall_exit(-1); // Terminate the process due to writing to read-only page
         return;
     }
+   /* Check if the faulting address is in the stack region. */
+if (fault_addr >= (void*)((uint8_t*)f->esp - 32) && fault_addr < PHYS_BASE)
+{
+  uint8_t *kpage = palloc_get_page (PAL_USER | PAL_ZERO);
+  if (kpage != NULL)
+  {
+    if (!install_page (pg_round_down(fault_addr), kpage, true))
+    {
+      palloc_free_page (kpage);
+      syscall_exit(-1);
+    }
+  }
+  else
+  {
+    syscall_exit(-1);
+  }
+  return;
+}
+
 
   /* To implement virtual memory, delete the rest of the function
      body, and replace it with code that brings in the page to
