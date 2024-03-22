@@ -65,7 +65,7 @@ start_process (void *file_name_)
 
   /* User implementation for tokenization */
   char *save_ptr;
-  file_name = strtok_r ((char*) file_name, " ", &save_ptr);
+  file_name = strtok_r ((char*) file_name_, " ", &save_ptr);
   /* End tokenization by user */
   
   /* Initialize interrupt frame and load executable. */
@@ -86,7 +86,7 @@ start_process (void *file_name_)
   /* END LOAD Check */
   
   /* If load failed, quit. */
-  palloc_free_page (file_name);
+  palloc_free_page (file_name_);
   if (!success){ 
     thread_exit ();
   }
@@ -280,7 +280,6 @@ load (const char *file_name, void (**eip) (void), void **esp, char **save_ptr)
   process_activate ();
 
   /* Open executable file. */
-  //lock_acquire(&file_system_lock);
   file = filesys_open (file_name);
   if (file == NULL) 
     {
@@ -288,8 +287,8 @@ load (const char *file_name, void (**eip) (void), void **esp, char **save_ptr)
       goto done; 
     }
   // since file is an executable, we want to deny write
-  file_deny_write(file);
-  t->executable = file;
+  // file_deny_write(file);
+  // t->executable = file;
   
   /* Read and verify executable header. */
   if (file_read (file, &ehdr, sizeof ehdr) != sizeof ehdr
@@ -374,8 +373,18 @@ load (const char *file_name, void (**eip) (void), void **esp, char **save_ptr)
 
  done:
   /* We arrive here whether the load is successful or not. */
-  //file_close (file);
-  //lock_release(&file_system_lock);
+  if (file != NULL) {
+    if (success) {
+      // Prevent writing to the executable file while it's running.
+      file_deny_write(file);
+      // Assign the file to the thread structure for later use and closing.
+      t->executable = file;
+    } else {
+      // Close the file immediately if loading was not successful.
+      file_close(file);
+    }
+  }
+
   return success;
 }
 

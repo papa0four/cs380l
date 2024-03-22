@@ -539,6 +539,7 @@ struct child_process* find_child_process(int pid)
 void
 remove_child_process (struct child_process *cp)
 {
+  thread_lock_release ();
   list_remove(&cp->elem);
   free(cp);
 }
@@ -554,6 +555,9 @@ void remove_all_child_processes (void)
   {
     next = list_next(e);
     struct child_process *cp = list_entry(e, struct child_process, elem);
+    if (NULL == cp)
+      return;
+      thread_lock_release ();
     list_remove(&cp->elem); //remove child process
     free(cp);
   }
