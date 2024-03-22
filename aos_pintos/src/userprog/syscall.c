@@ -42,7 +42,7 @@ void validate_ptr (const void* vaddr);
 void validate_str (const void* str);
 void validate_buffer (const void* buf, unsigned byte_size);
 
-bool FILE_LOCK_INIT = false;
+// bool FILE_LOCK_INIT = false;
 
 /*
  * System call initializer
@@ -52,6 +52,14 @@ void
 syscall_init (void)
 {
   intr_register_int (0x30, 3, INTR_ON, syscall_handler, "syscall");
+
+  // if (!FILE_LOCK_INIT)
+  // {
+  //   lock_init(&file_system_lock);
+  //   FILE_LOCK_INIT = true;
+  // }
+
+  lock_init (&file_system_lock);
 }
 
 /*
@@ -62,12 +70,6 @@ syscall_init (void)
 static void
 syscall_handler (struct intr_frame *f UNUSED) 
 {
-  if (!FILE_LOCK_INIT)
-  {
-    lock_init(&file_system_lock);
-    FILE_LOCK_INIT = true;
-  }
-  
   int argv[MAX_ARGS] = { 0 };
   int esp = getpage_ptr((const void *) f->esp);
   
@@ -568,9 +570,9 @@ add_file (struct file *file_name)
     return ERROR;
   }
   process_file_ptr->file = file_name;
-  process_file_ptr->fd = thread_current()->fd;
-  thread_current()->fd++;
-  list_push_back(&thread_current()->file_list, &process_file_ptr->elem);
+  process_file_ptr->fd = thread_current ()->fd;
+  thread_current ()->fd++;
+  list_push_back (&thread_current ()->file_list, &process_file_ptr->elem);
   return process_file_ptr->fd;
   
 }
