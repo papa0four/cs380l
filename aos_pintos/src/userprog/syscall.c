@@ -360,8 +360,10 @@ syscall_filesize(int filedes)
 int
 syscall_read(int filedes, void *buffer, unsigned length)
 {
+  lock_acquire(&file_system_lock);
   if (length <= 0)
   {
+    lock_release (&file_system_lock);
     return length;
   }
   
@@ -374,11 +376,11 @@ syscall_read(int filedes, void *buffer, unsigned length)
       // retrieve pressed key from the input buffer
       local_buf[i] = input_getc(); // from input.h
     }
+    lock_release (&file_system_lock);
     return length;
   }
   
   /* read from file */
-  lock_acquire(&file_system_lock);
   struct file *file_ptr = get_file(filedes);
   if (!file_ptr)
   {
@@ -394,27 +396,30 @@ syscall_read(int filedes, void *buffer, unsigned length)
 int 
 syscall_write (int filedes, const void * buffer, unsigned byte_size)
 {
-    if (byte_size <= 0)
-    {
-      return byte_size;
-    }
-    if (filedes == STD_OUTPUT)
-    {
-      putbuf (buffer, byte_size); // from stdio.h
-      return byte_size;
-    }
-    
-    // start writing to file
-    lock_acquire(&file_system_lock);
-    struct file *file_ptr = get_file(filedes);
-    if (!file_ptr)
-    {
-      lock_release(&file_system_lock);
-      return ERROR;
-    }
-    int bytes_written = file_write(file_ptr, buffer, byte_size); // file.h
+  lock_acquire(&file_system_lock);
+  if (byte_size <= 0)
+  {
     lock_release (&file_system_lock);
-    return bytes_written;
+    return byte_size;
+  }
+  if (filedes == STD_OUTPUT)
+  {
+    putbuf (buffer, byte_size); // from stdio.h
+    lock_release (&file_system_lock);
+    return byte_size;
+  }
+  
+  // start writing to file
+  
+  struct file *file_ptr = get_file(filedes);
+  if (!file_ptr)
+  {
+    lock_release(&file_system_lock);
+    return ERROR;
+  }
+  int bytes_written = file_write(file_ptr, buffer, byte_size); // file.h
+  lock_release (&file_system_lock);
+  return bytes_written;
 }
 
 /* syscall_seek */
@@ -557,7 +562,7 @@ void remove_all_child_processes (void)
     struct child_process *cp = list_entry(e, struct child_process, elem);
     if (NULL == cp)
       return;
-      thread_lock_release ();
+    thread_lock_release ();
     list_remove(&cp->elem); //remove child process
     free(cp);
   }

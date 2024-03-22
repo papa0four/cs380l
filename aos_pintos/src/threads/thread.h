@@ -4,6 +4,7 @@
 #include <debug.h>
 #include <list.h>
 #include <stdint.h>
+#include "synch.h"
 #include "userprog/syscall.h"
 
 /* States in a thread's life cycle. */
@@ -103,6 +104,7 @@ struct thread
       struct list             file_list;      // list of files
       struct list             child_list;     // list of child processes
       struct list             lock_list;      // use to keep track of locks the thread holds      
+      struct lock             child_list_lock;// lock held in the lock list
       struct child_process    *child;         // point to child process
       struct file             *executable;    // use for denying writes to executables
       int                     fd;             // file descriptor    

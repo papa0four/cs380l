@@ -33,25 +33,60 @@ static bool load (const char *cmdline, void (**eip) (void), void **esp, char **s
 tid_t
 process_execute (const char * file_name) 
 {
-  char *fn_copy = NULL;
-  tid_t tid = -1;
+  // char *fn_copy = NULL;
+  // tid_t tid = -1;
   
-  fn_copy = palloc_get_page(0);
-  if (fn_copy == NULL){
-    return TID_ERROR;
-  }
+  // fn_copy = palloc_get_page(0);
+  // if (fn_copy == NULL){
+  //   return TID_ERROR;
+  // }
   
-  strlcpy (fn_copy, file_name, PGSIZE);
-  char *fname = NULL;
-  char *saveptr = NULL;
-  fname = strtok_r((char*)file_name, " ", &saveptr );
+  // strlcpy (fn_copy, file_name, PGSIZE);
+  // char *fname = NULL;
+  // char *saveptr = NULL;
+  // fname = strtok_r((char*)file_name, " ", &saveptr );
   
-  tid = thread_create (fname, PRI_DEFAULT, start_process, fn_copy);
+  // tid = thread_create (fname, PRI_DEFAULT, start_process, fn_copy);
   
-  if (tid == TID_ERROR){
-    palloc_free_page (fn_copy); 
-  }
-  return tid;
+  // if (tid == TID_ERROR){
+  //   palloc_free_page (fn_copy); 
+  // }
+  // return tid;
+
+    char *fn_copy;
+    tid_t tid;
+  
+    // First, make a copy of FILE_NAME.
+    // Otherwise there's a race condition between the caller and load().
+    fn_copy = palloc_get_page(0);
+    if (fn_copy == NULL) {
+        return TID_ERROR;
+    }
+    strlcpy(fn_copy, file_name, PGSIZE);
+  
+    // Extract the process name from file_name
+    char *save_ptr;
+    char *file_name_copy = malloc(strlen(file_name) + 1);
+    strlcpy(file_name_copy, file_name, strlen(file_name) + 1);
+    file_name = strtok_r(file_name_copy, " ", &save_ptr);
+  
+    // Create a new thread to execute FILE_NAME.
+    tid = thread_create(file_name, PRI_DEFAULT, start_process, fn_copy);
+  
+    if (tid == TID_ERROR) {
+        palloc_free_page(fn_copy); 
+    } else {
+        // Ensure synchronization when accessing and modifying the child list
+        struct thread *cur = thread_current();
+        lock_acquire(&cur->child_list_lock);
+        // Here you would typically add a newly created child process structure to the child_list
+        // Assuming add_child_process is a function you implement
+        child_process_insert (tid);
+        lock_release(&cur->child_list_lock);
+    }
+  
+    free(file_name_copy);
+    return tid;
 }
 
 /* A thread function that loads a user process and starts it
@@ -112,65 +147,133 @@ start_process (void *file_name_)
 int
 process_wait (tid_t child_tid UNUSED) 
 {
-  struct child_process* child_process_ptr = find_child_process (child_tid);
-  if (!child_process_ptr)
-  {
-    return ERROR;
-  }
+  // struct child_process* child_process_ptr = find_child_process (child_tid);
+  // if (!child_process_ptr)
+  // {
+  //   return ERROR;
+  // }
   
-  if (child_process_ptr->wait)
-  {
-    return ERROR;
-  }
-  child_process_ptr->wait = 1; // set wait for child to true
-  while (!child_process_ptr->exit)
-  {
-    asm volatile ("" : : : "memory");
-  }
-  int status = child_process_ptr->status;
-  remove_child_process (child_process_ptr);
-  return status;
+  // if (child_process_ptr->wait)
+  // {
+  //   return ERROR;
+  // }
+  // child_process_ptr->wait = 1; // set wait for child to true
+  // while (!child_process_ptr->exit)
+  // {
+  //   asm volatile ("" : : : "memory");
+  // }
+  // int status = child_process_ptr->status;
+  // remove_child_process (child_process_ptr);
+  // return status;
+    struct thread *cur = thread_current();
+    int exit_status;
+  
+    // lock_acquire(&cur->child_list_lock);
+    // Assuming find_child_process returns a pointer to the child process structure if found, NULL otherwise.
+    struct child_process* child_process_ptr = find_child_process(child_tid);
+    if (child_process_ptr == NULL) {
+        // lock_release(&cur->child_list_lock);
+        return ERROR; // ERROR is a constant you define for error cases, e.g., -1
+    }
+    if (child_process_ptr->wait) {
+        // lock_release(&cur->child_list_lock);
+        return ERROR;
+    }
+    child_process_ptr->wait = true;
+  
+    // Wait for the child process to exit if it hasn't yet
+    while (!child_process_ptr->exit) {
+        // Sema_down is a semaphore operation to wait on the child process
+        // This assumes each child process has an associated semaphore that its parent waits on
+        sema_down(&child_process_ptr->exit_sema);
+    }
+  
+    exit_status = child_process_ptr->status;
+    // Remove the child from the child list and free its resources
+    remove_child_process(child_process_ptr);
+    // lock_release(&cur->child_list_lock);
+  
+    return exit_status;
 }
 
 /* Free the current process's resources. */
 void
 process_exit (void)
 {
-  struct thread *cur = thread_current ();
-  uint32_t *pd;
+  // struct thread *cur = thread_current ();
+  // uint32_t *pd;
   
-  lock_acquire (&file_system_lock);
-  process_close_file (CLOSE_ALL_FD);
-  /* check if current thread is an executable if so we will close it */
-  if (cur->executable)
-    file_close(cur->executable); // from file.h
+  // lock_acquire (&file_system_lock);
+  // process_close_file (CLOSE_ALL_FD);
+  // /* check if current thread is an executable if so we will close it */
+  // if (cur->executable)
+  //   file_close(cur->executable); // from file.h
 
-  lock_release (&file_system_lock);
+  // lock_release (&file_system_lock);
   
-  /* free the list of child processes */
-  remove_all_child_processes ();
+  // /* free the list of child processes */
+  // remove_all_child_processes ();
   
-  if (thread_alive(cur->parent))
-  {
-    cur->child->exit = 1;
-    sema_up(&cur->child->exit_sema);
-  }
+  // if (thread_alive(cur->parent))
+  // {
+  //   cur->child->exit = 1;
+  //   sema_up(&cur->child->exit_sema);
+  // }
   
-  /* Destroy the current process's page directory and switch back
-     to the kernel-only page directory. */
-  pd = cur->pagedir;
-  if (pd != NULL) 
-    {
-      /* Correct ordering here is crucial.  We must set
-         cur->pagedir to NULL before switching page directories,
-         so that a timer interrupt can't switch back to the
-         process page directory.  We must activate the base page
-         directory before destroying the process's page
-         directory, or our active page directory will be one
-         that's been freed (and cleared). */
-      cur->pagedir = NULL;
-      pagedir_activate (NULL);
-      pagedir_destroy (pd);
+  // /* Destroy the current process's page directory and switch back
+  //    to the kernel-only page directory. */
+  // pd = cur->pagedir;
+  // if (pd != NULL) 
+  //   {
+  //     /* Correct ordering here is crucial.  We must set
+  //        cur->pagedir to NULL before switching page directories,
+  //        so that a timer interrupt can't switch back to the
+  //        process page directory.  We must activate the base page
+  //        directory before destroying the process's page
+  //        directory, or our active page directory will be one
+  //        that's been freed (and cleared). */
+  //     cur->pagedir = NULL;
+  //     pagedir_activate (NULL);
+  //     pagedir_destroy (pd);
+  //   }
+
+    struct thread *cur = thread_current();
+    uint32_t *pd;
+
+    // Acquire the file system lock to ensure thread-safe access to file operations
+    lock_acquire(&file_system_lock);
+
+    // Close all open files associated with the current process
+    process_close_file(CLOSE_ALL_FD); // Assuming CLOSE_ALL_FD indicates a special action to close all files.
+
+    // If the current thread has an executable file associated with it, close it
+    // This step is necessary to ensure the executable can be modified or deleted after the process exits
+    if (cur->executable) {
+        file_allow_write(cur->executable); // Re-enable writing to the executable file
+        file_close(cur->executable); // Close the executable file
+        cur->executable = NULL; // Clear the pointer to avoid dangling references
+    }
+
+    // Release the file system lock after performing file operations
+    lock_release(&file_system_lock);
+
+    // Free the list of child processes to avoid memory leaks and ensure proper cleanup
+    remove_all_child_processes();
+
+    // Notify the parent process that this process has exited, if the parent is waiting
+    if (thread_alive(cur->parent)) {
+        cur->child->exit = true; // Mark the current thread's child structure as exited
+        sema_up(&cur->child->exit_sema); // Signal the semaphore to wake up the parent if it's waiting
+    }
+
+    // Destroy the current process's page directory and switch back to the kernel-only page directory
+    pd = cur->pagedir;
+    if (pd != NULL) {
+        // It's crucial to set cur->pagedir to NULL before switching page directories
+        // This ensures that timer interrupts don't switch back to the process's page directory
+        cur->pagedir = NULL;
+        pagedir_activate(NULL); // Switch to the kernel's page directory
+        pagedir_destroy(pd); // Free the process's page directory
     }
 }
 
