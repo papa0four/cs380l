@@ -26,7 +26,7 @@ typedef int pid_t;
 
 static void syscall_handler (struct intr_frame *);
 int file_add (struct file *file_name);
-void get_args (struct intr_frame *f, int *arg, int num_of_args);
+void get_args (struct intr_frame *f, int *argv, int argc);
 void syscall_halt (void);
 pid_t syscall_exec (const char *cmd_line);
 int syscall_wait (pid_t pid);
@@ -35,14 +35,14 @@ bool syscall_remove (const char *file);
 int syscall_open (const char *file);
 int syscall_filesize (int fd);
 int syscall_read (int fd, void *buffer, unsigned size);
-int syscall_write (int fd, const void * buffer, unsigned size);
+int syscall_write (int fd, const void *buffer, unsigned size);
 void syscall_seek (int fd, unsigned position);
 unsigned syscall_tell (int fd);
 void syscall_close (int fd);
 bool syscall_symlink (const char *target, const char *linkpath);
-void validate_ptr (const void* vaddr);
-void validate_str (const void* str);
-void validate_buffer (const void* buf, unsigned size);
+void validate_ptr (const void *vaddr);
+void validate_str (const void *str);
+void validate_buffer (const void *buf, unsigned size);
 
 /*
  * System call initializer
@@ -546,7 +546,7 @@ void validate_ptr (const void *vaddr)
  * @param (const void *) str - a pointer to the string that requires validation.
  * @return (void) - N/A
  */
-void validate_str (const void* str)
+void validate_str (const void *str)
 {
     while (0 != *(char *) translate_vaddr (str))
       str = (char *) str + 1;
@@ -558,7 +558,7 @@ void validate_str (const void* str)
  *          unauthorized space.
  * @param (const void *) buf - a pointer to the buffer that requires validation.
  * @param (unsigned) size - the size of the buffer being checked. */
-void validate_buffer (const void* buf, unsigned size)
+void validate_buffer (const void *buf, unsigned size)
 {
   unsigned i = 0;
   char* buffer_copy = (char *) buf;
