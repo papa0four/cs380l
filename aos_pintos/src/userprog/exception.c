@@ -92,7 +92,6 @@ kill (struct intr_frame *f)
       printf ("%s: dying due to interrupt %#04x (%s).\n",
               thread_name (), f->vec_no, intr_name (f->vec_no));
       intr_dump_frame (f);
-      //thread_exit (); 
       syscall_exit(-1);
       break;
       
@@ -168,5 +167,4 @@ page_fault (struct intr_frame *f)
           write ? "writing" : "reading",
           user ? "user" : "kernel");
   kill (f);
-   // syscall_exit (-1);
 }

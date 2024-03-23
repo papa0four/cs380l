@@ -494,7 +494,6 @@ init_thread (struct thread *t, const char *name, int priority)
   t->executable = NULL;     // initialize file pointer to NULL
   t->parent     = -1;       // no parent exists at initialization
   t->fd         = 2;        // minimum file descriptor is 2 (0 = IN/1 = OUT)
-  
   /* End user implementation*/
 }
 
@@ -612,8 +611,13 @@ allocate_tid (void)
    Used by switch.S, which can't figure it out on its own. */
 uint32_t thread_stack_ofs = offsetof (struct thread, stack);
 
-/* Traverse through every list of threads and check if thread with 
-   the desired pid is alive */
+/* thrad_alive:
+ * @brief - traverse through every list of threads and check if thread with 
+ *          the desired pid is alive.
+ * @param (int) pid - the pid of the thread desired to check for status.
+ * @return (int) - on success, returns a 1 (true) if the thread pid matches, or
+ *                 returns 0 (false) if no match is found.
+ */
 int thread_alive (int pid){
   struct list_elem *e = NULL;
   for (e = list_begin(&all_list); e != list_end(&all_list); e = list_next (e))
@@ -628,7 +632,12 @@ int thread_alive (int pid){
   return 0; // no tid matches then thread is no longer alive
 }
 
-/* add a new child process to list */
+/* child_process_insert:
+ * @brief - add a new child process to the thread's child list member.
+ * @param (int) pid - the pid of the newly created child process.
+ * @return (struct child_process *) - returns a pointer to the newly created
+ *                                    child process.
+ */
 struct child_process* child_process_insert (int pid)
 {
   struct child_process *child = malloc(sizeof(struct child_process));
@@ -643,7 +652,11 @@ struct child_process* child_process_insert (int pid)
   return child;
 }
 
-/* releases all the locks thread holds */
+/* thread_lock_release:
+ * @brief - releases all the locks thread holds within the lock list.
+ * @param (void) - N/A
+ * @return (void) - N/A
+ */
 void
 thread_lock_release (void)
 {

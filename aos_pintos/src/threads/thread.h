@@ -101,14 +101,14 @@ struct thread
    #endif
 
       /* Shared between syscall/process.c */
-      struct list             file_list;      // list of files
-      struct list             child_list;     // list of child processes
-      struct list             lock_list;      // use to keep track of locks the thread holds      
-      struct lock             child_list_lock;// lock held in the lock list
-      struct child_process    *child;         // point to child process
-      struct file             *executable;    // use for denying writes to executables
-      int                     fd;             // file descriptor    
-      tid_t                   parent;         // id of the parent
+      struct list             file_list;        /* list of process files */
+      struct list             child_list;       /* list of child processes */
+      struct list             lock_list;        /* used to keep track of locks the thread holds */
+      struct lock             child_list_lock;  /* lock held in the lock list */
+      struct child_process    *child;           /* point to child process */
+      struct file             *executable;      /* use for denying writes to executables */
+      int                     fd;               /* file descriptor */
+      tid_t                   parent;           /* id of the parent thread */
 
       /* Owned by thread.c. */
       unsigned magic;                     /* Detects stack overflow. */
@@ -150,7 +150,9 @@ void thread_set_nice (int);
 int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
 
+/* User implemented functions */
 int thread_alive (int pid);
 struct child_process* child_process_insert (int pid);
 void thread_lock_release (void);
+
 #endif /* threads/thread.h */
