@@ -21,6 +21,7 @@
 #define ARG3      3
 #define MAX_ARGS  3
 #define WORD_SZ   4
+#define PAGE_SZ   4096
 
 typedef int pid_t;
 
@@ -65,6 +66,9 @@ syscall_init (void)
 static void
 syscall_handler (struct intr_frame *f) 
 {
+  /* Update the current thread's esp to the stack pointer at time of syscall. */
+  thread_current ()->esp = f->esp;
+  
   int argv[MAX_ARGS] = { 0 };
   int esp = translate_vaddr ((const void *) f->esp);
 
@@ -548,8 +552,29 @@ void validate_ptr (const void *vaddr)
  */
 void validate_str (const void *str)
 {
-    while (0 != *(char *) translate_vaddr (str))
-      str = (char *) str + 1;
+  unsigned page_size = PAGE_SZ;
+  const char *cur = (const char *) str;
+  const char *prev_page = (const char *)((uintptr_t) str & ~(page_size - 1));
+
+  while (true)
+  {
+    if ((!is_user_vaddr (cur)) || (NULL == pagedir_get_page (thread_current ()->pagedir, cur)))
+      syscall_exit (ERROR);
+
+    if ('\0' == *cur)
+      break;
+
+    cur++;
+
+    void *cur_page = (void *)((uintptr_t)cur & ~(page_size - 1));
+    if (prev_page != cur_page)
+    {
+      if ((!is_user_vaddr (cur)) || (NULL == pagedir_get_page (thread_current ()->pagedir, cur)))
+        syscall_exit (ERROR);
+
+      prev_page = cur_page;
+    }
+  }
 }
 
 /* validate_buffer:
@@ -557,16 +582,19 @@ void validate_str (const void *str)
  *          virtual page address, and determined if its size does not leak into 
  *          unauthorized space.
  * @param (const void *) buf - a pointer to the buffer that requires validation.
- * @param (unsigned) size - the size of the buffer being checked. */
+ * @param (unsigned) size - the size of the buffer being checked. 
+ * @return (void) - N/A
+ */
 void validate_buffer (const void *buf, unsigned size)
 {
-  unsigned i = 0;
-  char* buffer_copy = (char *) buf;
-  while (i < size)
+  unsigned page_size = PAGE_SZ;
+  const char *buffer_end = (const char *)buf + size;
+
+  for (const char *cur = buf; cur < buffer_end; )
   {
-    validate_ptr ((const void *) buffer_copy);
-    buffer_copy++;
-    i++;
+    validate_ptr (cur);
+    unsigned distance_to_page_end = page_size - ((uintptr_t) cur & (page_size - 1));
+    cur += MIN(distance_to_page_end, (unsigned)(buffer_end - cur));
   }
 }
 

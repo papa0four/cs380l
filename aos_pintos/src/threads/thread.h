@@ -98,6 +98,8 @@ struct thread
    #ifdef USERPROG
       /* Owned by userprog/process.c. */
       uint32_t *pagedir;                  /* Page directory. */
+      void *stack_bottom;                 /* Bottom of stack for dynamic growth. */
+      void *esp;                          /* Current stack pointer, for syscalls or page faults. */
    #endif
 
       /* Shared between syscall/process.c */
