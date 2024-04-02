@@ -98,9 +98,13 @@ struct thread
    #ifdef USERPROG
       /* Owned by userprog/process.c. */
       uint32_t *pagedir;                  /* Page directory. */
+   #endif
+
+      /* Shared between page.c/frame.c/swap.c */
       void *stack_bottom;                 /* Bottom of stack for dynamic growth. */
       void *esp;                          /* Current stack pointer, for syscalls or page faults. */
-   #endif
+      struct hash *pages;                 /* hash table implementation of a page table */
+      struct list file_map;               /* list of memory mapped files */
 
       /* Shared between syscall/process.c */
       struct list             file_list;        /* list of process files */
