@@ -22,8 +22,6 @@
 #include "userprog/syscall.h"
 
 #define DEFAULT_ARGV 2
-#define MAX_STACK_SZ (8 * 1024 * 1024) // 8 MB stack size limit
-#define STACK_THRESHOLD (4 * PGSIZE) // 4 pages worth of growth
 
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp, char **saveptr);

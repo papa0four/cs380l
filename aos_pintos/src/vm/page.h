@@ -9,6 +9,7 @@
 #include "devices/block.h"
 
 /* Defined for uninitialized sector values */
+#define PUSHA_SZ 32
 #define BLOCK_SECTOR_NONE ((block_sector_t) -1)
 
 /* a supplemental page table entry */
@@ -31,3 +32,5 @@ struct spt_entry
 };
 
 struct spt_entry *spt_entry_create (void *vaddr, bool writable);
+void spt_entry_remove (void *vaddr);
+struct spt_entry *spt_entry_lookup (const void *vaddr);

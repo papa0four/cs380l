@@ -7,6 +7,7 @@
 #include "threads/thread.h"
 #include "threads/vaddr.h"
 #include "userprog/pagedir.h"
+#include "userprog/process.h"
 
 struct spt_entry *spt_entry_create (void *vaddr, bool writable)
 {
@@ -38,4 +39,44 @@ struct spt_entry *spt_entry_create (void *vaddr, bool writable)
     }
 
     return p;
+}
+
+void spt_entry_remove (void *vaddr)
+{
+    struct spt_entry *p = spt_entry_lookup (vaddr);
+    ASSERT (NULL != p);
+
+    /* Place holder for lock */
+    if (p->frame)
+    {
+        struct frame *f = p->frame;
+        if ((p->file) && (!p->private))
+            spt_entry_out (p);
+        frame_free (f);
+    }
+
+    hash_delete (thread_current ()->pages, &p->hash_elem);
+    free (p);
+}
+
+struct spt_entry *spt_entry_lookup (const void *vaddr)
+{
+    ASSERT (NULL != vaddr);
+    
+    if (PHYS_BASE > vaddr)
+    {
+        struct spt_entry p;
+        struct hash_elem *e;
+
+        p.vaddr = (void *) pg_round_down (vaddr);
+        e = hash_find (thread_current ()->pages, &p.hash_elem);
+        if (e)
+            return hash_entry (e, struct spt_entry, hash_elem);
+
+        /* Comment block */
+        if (((PHYS_BASE - MAX_STACK_SZ) < p.vaddr) && (((void *) thread_current ()->esp - PUSHA_SZ)) < vaddr)
+            return spt_entry_create (p.addr, false);
+    }
+
+    return NULL;
 }
