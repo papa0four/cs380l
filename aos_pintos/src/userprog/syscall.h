@@ -17,6 +17,10 @@ void syscall_init (void);
 
 #define USER_VADDR_BOTTOM ((void *) 0x08048000) /* Project 2 instruction 3.1.4.1 */
 
+#ifndef MIN
+#define MIN(a, b) ((a) < (b) ? (a) : (b))
+#endif
+
 struct child_process
 {
   int pid;                        /* the PID of the child process */
