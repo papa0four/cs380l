@@ -1,3 +1,6 @@
+#ifndef VM_PAHE_H
+#define VM_PAGE_H
+
 #include <hash.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -34,10 +37,12 @@ struct spt_entry *spt_entry_create (void *vaddr, bool writable);
 void spt_entry_remove (void *vaddr);
 struct spt_entry *spt_entry_lookup (const void *vaddr);
 bool spt_page_in (void *faddr);
-bool spt_page_out (struct page *page);
-bool spt_recent (struct page *page);
+bool spt_page_out (struct spt_entry *page);
+bool spt_recent (struct spt_entry *page);
 bool spt_lock (const void *vaddr, bool writable);
 void spt_unlock (const void *vaddr);
 
 hash_hash_func spt_entry_hash;
 hash_less_func spt_less_func;
+
+#endif /* VM_PAGE_H */

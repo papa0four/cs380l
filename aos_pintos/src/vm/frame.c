@@ -23,7 +23,6 @@ void frame_table_init (void)
     /* allocate the frames array using init_ram_pages (threads/loader.h) */
     ft.frames = malloc (sizeof (struct frame) * init_ram_pages);
     ft.frame_cnt = 0;
-    ft.hand = 0;
 
     if (NULL == ft.frames)
         return;
@@ -133,7 +132,7 @@ static bool is_frame_available (void)
     return false;
 }
 
-static bool wait_for_frame (struct condition frame_cond, int64_t timeout_ms)
+static bool wait_for_frame (struct condition *frame_cond, int64_t timeout_ms)
 {
     struct lock wait_lock;
     lock_init (&wait_lock);
@@ -141,9 +140,9 @@ static bool wait_for_frame (struct condition frame_cond, int64_t timeout_ms)
 
     /* milliseconds to ticks conversion */
     int64_t start = timer_ticks ();
-    int64_t end = start + timer_msleep (timeout_ms);
+    int64_t end = start + MS_TO_TICKS (timeout_ms);
 
-    while ((!is_frame_available ()) && (timer_elapsed (start) < timeout_ms))
+    while ((!is_frame_available ()) && (timer_ticks () < end))
         cond_wait (frame_cond, &wait_lock);
 
     bool succeeded = is_frame_available ();

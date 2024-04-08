@@ -1,4 +1,6 @@
 #include "vm/page.h"
+#include "vm/frame.h"
+#include "vm/swap.h"
 #include <debug.h>
 #include <stdio.h>
 #include <string.h>
@@ -10,7 +12,7 @@
 #include "userprog/process.h"
 
 /* Max size of stack in bytes */
-#define STACK_MAX (1024 * 1024);
+#define STACK_MAX (1024 * 1024)
 
 struct spt_entry *spt_entry_create (void *vaddr, bool writable)
 {
@@ -52,8 +54,8 @@ void spt_entry_remove (void *vaddr)
     {
         struct frame *f = p->frame;
         if ((p->file) && (!p->private))
-            spt_entry_out (p);
-        frame_free (f);
+            spt_page_out (p);
+        frame_release (f);
     }
 
     hash_delete (thread_current ()->pages, &p->hash_elem);
@@ -77,23 +79,23 @@ void spt_destroy (void)
         hash_destroy (h, page_destroy);
 }
 
-struct spt_entry *spt_entry_lookup (const void *vaddr)
+struct spt_entry *spt_entry_lookup (const void *faddr)
 {
-    ASSERT (NULL != vaddr);
+    ASSERT (NULL != faddr);
     
-    if (PHYS_BASE > vaddr)
+    if (PHYS_BASE > faddr)
     {
         struct spt_entry p;
         struct hash_elem *e;
 
-        p.vaddr = (void *) pg_round_down (vaddr);
+        p.vaddr = (void *) pg_round_down (faddr);
         e = hash_find (thread_current ()->pages, &p.hash_elem);
         if (e)
             return hash_entry (e, struct spt_entry, hash_elem);
 
         /* Comment block */
-        if (((*(intptr_t) PHYS_BASE - MAX_STACK_SZ) < p.vaddr) &&
-            (((void *) thread_current ()->esp - PUSHA_SZ)) < vaddr)
+        if ((((char *) PHYS_BASE - STACK_MAX) < (char *) faddr) &&
+            (((char *) thread_current ()->esp - PUSHA_SZ)) < (char *) faddr)
             return spt_entry_create (p.vaddr, false);
     }
 
@@ -121,7 +123,7 @@ static bool page_in_helper (struct spt_entry * page)
                                             page->file_offset
                                         );
         off_t zero_bytes = PGSIZE - read_bytes;
-        memset ((page->frame->base_vaddr + read_bytes), 0, zero_bytes);
+        memset (((char *) page->frame->base_vaddr + read_bytes), 0, zero_bytes);
         if (page->file_bytes != read_bytes)
             printf ("BYTES READ != BYTES REQUESTED: (%"PROTd") : (%"PROTd")\n", 
                     read_bytes, page->file_bytes);
@@ -219,7 +221,7 @@ bool spt_recent (struct spt_entry *p)
     ASSERT (NULL != p->frame);
     ASSERT (lock_held_by_current_thread (&p->frame->frame_lock));
 
-    bool was_accessed = padedir_is_accessed (p->thread->pagedir, p->vaddr);
+    bool was_accessed = pagedir_is_accessed (p->thread->pagedir, p->vaddr);
     if (was_accessed)
         pagedir_set_accessed(p->thread->pagedir, p->vaddr, false);
     return was_accessed;
@@ -251,13 +253,13 @@ void spt_unlock (const void *vaddr)
     frame_unlock (p->frame);
 }
 
-unsigned spt_entry_hash (const struct hash_elem *e, void *aux UNUSED)
+hash_hash_func spt_entry_hash (const struct hash_elem *e, void *aux UNUSED)
 {
     const struct spt_entry *p = hash_entry (e, struct spt_entry, hash_elem);
     return ((uintptr_t) p->vaddr) >> PGBITS;
 }
 
-bool spt_less_func (const struct spt_entry *a, const struct spt_entry *b)
+hash_less_func spt_less_func (const struct spt_entry *a, const struct spt_entry *b)
 {
-    return hash_entry (a, struct spt_entry, hash_elem)->vaddr < hash_entry (b, struct spt_entry, hash_elem)->vaddr;
+    return (hash_entry (a, struct spt_entry, hash_elem)->vaddr < hash_entry (b, struct spt_entry, hash_elem)->vaddr);
 }

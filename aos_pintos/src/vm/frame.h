@@ -7,6 +7,8 @@
 #define MAX_RETRIES 3
 #define TIMEOUT_MS 100
 
+#define MS_TO_TICKS(ms) ((ms) *TIMEOUT_MS / 1000)
+
 /* Add comment here about frame struct */
 struct frame
 {
@@ -22,7 +24,7 @@ struct frame_table
     struct lock table_lock;         /* Lock to synchronize access to the frame table. */
     struct condition frame_cond;    /* Frame availability condition */
     size_t frame_cnt;               /* Number of frames in the array. */
-}
+};
 
 void frame_table_init (void);
 struct frame *frame_allocate (struct spt_entry *page);
