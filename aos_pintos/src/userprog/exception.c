@@ -8,7 +8,7 @@
 #include <user/syscall.h>
 #include "syscall.h"
 #include "userprog/process.h"
-//#include "syscall.c"
+#include "vm/page.h"
 
 /* Number of page faults processed. */
 static long long page_fault_cnt;
@@ -162,7 +162,7 @@ page_fault (struct intr_frame *f)
          if (expand_stack(f->esp, fault_addr))
             return; // successfully expanded stack
       }
-      else if ((user) && (spt_page_in (fault_addr)))
+      else if (spt_page_in (fault_addr))
          return;
       else
       {

@@ -80,27 +80,53 @@ void spt_destroy (void)
         hash_destroy (h, page_destroy);
 }
 
-struct spt_entry *spt_entry_lookup (const void *faddr)
-{
-    ASSERT (NULL != faddr);
+// struct spt_entry *spt_entry_lookup (const void *faddr)
+// {
+//     ASSERT (NULL != faddr);
     
-    if (PHYS_BASE > faddr)
-    {
-        struct spt_entry p;
-        struct hash_elem *e;
+//     if (PHYS_BASE > faddr)
+//     {
+//         struct spt_entry p;
+//         struct hash_elem *e;
 
-        p.vaddr = (void *) pg_round_down (faddr);
-        e = hash_find (thread_current ()->pages, &p.hash_elem);
-        if (e)
-            return hash_entry (e, struct spt_entry, hash_elem);
+//         p.vaddr = (void *) pg_round_down (faddr);
+//         e = hash_find (thread_current ()->pages, &p.hash_elem);
+//         if (e)
+//             return hash_entry (e, struct spt_entry, hash_elem);
 
-        /* Comment block */
-        if ((((char *) PHYS_BASE - STACK_MAX) < (char *) faddr) &&
-            (((char *) thread_current ()->esp - PUSHA_SZ)) < (char *) faddr)
-            return spt_entry_create (p.vaddr, false);
+//         /* Comment block */
+//         if ((((char *) PHYS_BASE - STACK_MAX) < (char *) faddr) &&
+//             (((char *) thread_current ()->esp - PUSHA_SZ)) < (char *) faddr)
+//             return spt_entry_create (p.vaddr, false);
+//     }
+
+//     return NULL;
+// }
+
+struct spt_entry *spt_entry_lookup(const void *faddr) {
+    ASSERT(faddr != NULL);
+
+    struct thread *current_thread = thread_current();
+    if (current_thread->pages == NULL) {
+        // This means the supplemental page table has not been initialized.
+        return NULL;
     }
 
-    return NULL;
+    struct spt_entry temp_entry;
+    struct hash_elem *elem_found;
+
+    // Initialize a temporary SPT entry for lookup purposes.
+    temp_entry.vaddr = pg_round_down(faddr); // Align the address down to page boundary.
+
+    // Attempt to find the corresponding entry in the hash table.
+    elem_found = hash_find(current_thread->pages, &temp_entry.hash_elem);
+    if (elem_found == NULL) {
+        // No entry found for the fault address, indicating an access to unmapped memory.
+        return NULL;
+    }
+
+    // If an entry is found, return the actual SPT entry.
+    return hash_entry(elem_found, struct spt_entry, hash_elem);
 }
 
 static bool page_in_helper (struct spt_entry * page)
