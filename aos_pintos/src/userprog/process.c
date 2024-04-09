@@ -612,18 +612,23 @@ install_page (void *upage, void *kpage, bool writable)
 }
 
 /* User implemented for stack expansion */
+/* User implemented for stack expansion */
 bool is_stack_access (void *esp, void *addr)
 {
-  struct thread *cur = thread_current ();
-  void *stack_bottom = cur->stack_bottom;
+    struct thread *cur = thread_current();
+    void *stack_bottom = cur->stack_bottom;
 
-  /* place holder for potential pointer adjustment. */
-  void *adjusted_esp = esp;
+    char *adjusted_esp = (char *)esp;
+    char *adjusted_addr = (char *)addr;
 
-  bool within_stack_limit = (addr >= adjusted_esp) && (addr < PHYS_BASE) && (addr >= stack_bottom);
+    // Check if the address is within range below ESP to allow for PUSH operations,
+    // and within the stack limits (between stack_bottom and PHYS_BASE).
+    bool within_stack_growth_zone = adjusted_addr >= adjusted_esp - 32 && adjusted_addr < (char *)PHYS_BASE;
+    bool within_stack_bounds = adjusted_addr >= (char *)stack_bottom && adjusted_addr < (char *)PHYS_BASE;
 
-  return within_stack_limit;
+    return within_stack_growth_zone && within_stack_bounds;
 }
+
 
 bool expand_stack(void **esp, void *addr)
 {

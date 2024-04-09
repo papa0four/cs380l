@@ -162,9 +162,10 @@ page_fault (struct intr_frame *f)
          if (expand_stack(f->esp, fault_addr))
             return; // successfully expanded stack
       }
+      else if ((user) && (spt_page_in (fault_addr)))
+         return;
       else
       {
-         // printf ("Error: Stack growth failed at address: %p\n", fault_addr);
          syscall_exit (-1);
          return;
       }
@@ -174,12 +175,6 @@ page_fault (struct intr_frame *f)
       syscall_exit (-1);
       return;
    }
-   // if ((user) && (not_present))
-   // {
-   //    if (!spt_page_in (fault_addr))
-   //       thread_exit ();
-   //    return;
-   // }
 
   /* To implement virtual memory, delete the rest of the function
      body, and replace it with code that brings in the page to

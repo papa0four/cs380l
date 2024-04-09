@@ -23,7 +23,7 @@ struct spt_entry
     struct file *file;          /* Pointer to the file this page is loaded from, NULL otherwise */
     off_t file_offset;          /* Offset in the file to read the data from */
     uint32_t zero_bytes;        /* Number of bytes to zero after reading */
-    bool writable;              /* True if the page is writable */
+    bool read_only;              /* True if the page is not writable */
     struct hash_elem hash_elem; /* Hash table element */
     struct thread *thread;      /* Pointer to the process that owns the page */
     struct frame *frame;        /* Pointer to the physical frame, NULL if not loaded */
@@ -33,7 +33,7 @@ struct spt_entry
 };
 
 void spt_destroy (void);
-struct spt_entry *spt_entry_create (void *vaddr, bool writable);
+struct spt_entry *spt_entry_create (void *vaddr, bool read_only);
 void spt_entry_remove (void *vaddr);
 struct spt_entry *spt_entry_lookup (const void *vaddr);
 bool spt_page_in (void *faddr);

@@ -15,7 +15,7 @@
 /* Max size of stack in bytes */
 #define STACK_MAX (1024 * 1024)
 
-struct spt_entry *spt_entry_create (void *vaddr, bool writable)
+struct spt_entry *spt_entry_create (void *vaddr, bool read_only)
 {
     ASSERT (NULL != vaddr);
 
@@ -24,8 +24,8 @@ struct spt_entry *spt_entry_create (void *vaddr, bool writable)
         return NULL;
 
     p->vaddr        = pg_round_down (vaddr);
-    p->writable     = writable;
-    p->private      = !writable;
+    p->read_only    = read_only;
+    p->private      = !read_only;
     p->frame        = NULL;
     p->swap_index   = BLOCK_SECTOR_NONE;
     p->file         = NULL;
@@ -164,7 +164,7 @@ bool spt_page_in (void *faddr)
                                 thread_current ()->pagedir,
                                 p->vaddr,
                                 p->frame->base_vaddr,
-                                !p->writable
+                                !p->read_only
                             );
 
     /* Unlock frame */
@@ -233,7 +233,7 @@ bool spt_lock (const void *vaddr, bool writable)
     ASSERT (NULL != vaddr);
 
     struct spt_entry *p = spt_entry_lookup (vaddr);
-    if ((NULL == p) || ((p->writable) && (writable)))
+    if ((NULL == p) || ((p->read_only) && (writable)))
         return false;
 
     frame_lock (p);
@@ -241,7 +241,7 @@ bool spt_lock (const void *vaddr, bool writable)
         return ((page_in_helper (p)) && (pagedir_set_page (thread_current ()->pagedir,
                                                                 p->vaddr,
                                                                 p->frame->base_vaddr,
-                                                                !p->writable)));
+                                                                !p->read_only)));
     else
      return true;
 }
