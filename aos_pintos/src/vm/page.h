@@ -42,7 +42,7 @@ bool spt_recent (struct spt_entry *page);
 bool spt_lock (const void *vaddr, bool writable);
 void spt_unlock (const void *vaddr);
 
-hash_hash_func spt_entry_hash;
-hash_less_func spt_less_func;
+unsigned spt_entry_hash (const struct hash_elem *e, void *aux UNUSED);
+bool spt_less_func (const struct hash_elem *a, const struct hash_elem *b);
 
 #endif /* VM_PAGE_H */

@@ -1,6 +1,7 @@
 #include "vm/page.h"
 #include "vm/frame.h"
 #include "vm/swap.h"
+#include <hash.h>
 #include <debug.h>
 #include <stdio.h>
 #include <string.h>
@@ -137,7 +138,7 @@ static bool page_in_helper (struct spt_entry * page)
 
 bool spt_page_in (void *faddr)
 {
-    ASSERT (NULL != faddr);
+    // ASSERT (NULL != faddr);
 
     struct spt_entry *p = NULL;
     bool success = false;
@@ -253,13 +254,13 @@ void spt_unlock (const void *vaddr)
     frame_unlock (p->frame);
 }
 
-hash_hash_func spt_entry_hash (const struct hash_elem *e, void *aux UNUSED)
+unsigned spt_entry_hash (const struct hash_elem *e, void *aux UNUSED)
 {
     const struct spt_entry *p = hash_entry (e, struct spt_entry, hash_elem);
     return ((uintptr_t) p->vaddr) >> PGBITS;
 }
 
-hash_less_func spt_less_func (const struct spt_entry *a, const struct spt_entry *b)
+bool spt_less_func (const struct hash_elem *a, const struct hash_elem *b)
 {
     return (hash_entry (a, struct spt_entry, hash_elem)->vaddr < hash_entry (b, struct spt_entry, hash_elem)->vaddr);
 }

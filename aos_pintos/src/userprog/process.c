@@ -507,14 +507,6 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
     zero_bytes -= page_zero_bytes;
     upage += PGSIZE;
   }
-  // while ((0 < read_bytes) || (0 < zero_bytes))
-  // {
-  //   size_t page_read_bytes = read_bytes < PGSIZE ? read_bytes : PGSIZE;
-  //   size_t page_zero_bytes = PGSIZE - page_read_bytes;
-
-  //   /* Record page requirements in supplementle page table. */
-  //   if ()
-  // }
   return true;
 }
 
