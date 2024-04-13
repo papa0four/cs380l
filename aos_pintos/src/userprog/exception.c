@@ -1,20 +1,35 @@
 #include "userprog/exception.h"
 #include <inttypes.h>
 #include <stdio.h>
-#include "process.h"
+#include <string.h>
 #include "userprog/gdt.h"
 #include "threads/interrupt.h"
 #include "threads/thread.h"
-#include <user/syscall.h>
-#include "syscall.h"
-#include "userprog/process.h"
-//#include "syscall.c"
+#include "threads/vaddr.h"
+#include "threads/malloc.h"
+#include "threads/synch.h"
+#include "userprog/pagedir.h"
+#include "userprog/syscall.h"
+#include "vm/frame.h"
+#include "vm/page.h"
+#include "vm/swap.h"
 
 /* Number of page faults processed. */
 static long long page_fault_cnt;
 
 static void kill (struct intr_frame *);
 static void page_fault (struct intr_frame *);
+
+static bool
+valid_mem_access (const void *up)
+{
+  if (up == NULL)
+    return false;
+  if (is_kernel_vaddr (up))
+    return false;
+  
+  return true;
+}
 
 /* Registers handlers for interrupts that can be caused by user
    programs.
@@ -94,9 +109,8 @@ kill (struct intr_frame *f)
       printf ("%s: dying due to interrupt %#04x (%s).\n",
               thread_name (), f->vec_no, intr_name (f->vec_no));
       intr_dump_frame (f);
-      syscall_exit(-1);
-      break;
-      
+      thread_exit (); 
+
     case SEL_KCSEG:
       /* Kernel's code segment, which indicates a kernel bug.
          Kernel code shouldn't throw exceptions.  (Page faults
@@ -131,7 +145,11 @@ page_fault (struct intr_frame *f)
   bool not_present;  /* True: not-present page, false: writing r/o page. */
   bool write;        /* True: access was write, false: access was read. */
   bool user;         /* True: access by user, false: access by kernel. */
+  bool held_filesys_lock; /* True if the current thread was holding the
+                             filesys lock when page_fault occured */
   void *fault_addr;  /* Fault address. */
+
+  struct thread *t = thread_current ();
 
   /* Obtain faulting address, the virtual address that was
      accessed to cause the fault.  It may point to code or to
@@ -142,6 +160,9 @@ page_fault (struct intr_frame *f)
      (#PF)". */
   asm ("movl %%cr2, %0" : "=r" (fault_addr));
 
+  if ((held_filesys_lock = lock_held_by_current_thread (&filesys_lock)))
+    lock_release (&filesys_lock);
+
   /* Turn interrupts back on (they were only off so that we could
      be assured of reading CR2 before it changed). */
   intr_enable ();
@@ -149,32 +170,124 @@ page_fault (struct intr_frame *f)
   /* Count page faults. */
   page_fault_cnt++;
 
+  if(!valid_mem_access(fault_addr))
+    thread_exit ();
+
+  struct spt_entry *p = page_lookup (fault_addr);
+
+  if (p == NULL)
+  {
+    /* If fault_addr is outside of stack range, exit */
+    char *esp = f->esp;
+    if (((uintptr_t) fault_addr > (uintptr_t) PHYS_BASE) || ((uintptr_t) fault_addr < (uintptr_t) PHYS_BASE - 0x800000) ||
+        (fault_addr > (void *)(esp + PUSHA)) || (fault_addr < (void *)(esp - PUSHA)))
+      thread_exit ();
+
+    /* Grow stack page */
+    char *current_stack = (char *) PHYS_BASE - (t->page_cnt * PGSIZE);
+    char *new_page_addr = (char *) (pg_no (fault_addr) << PGBITS);
+
+    for (; new_page_addr < current_stack; new_page_addr+=PGSIZE)
+    {
+      struct spt_entry *nsp = (struct spt_entry *) malloc (sizeof (struct spt_entry));
+      nsp->is_stack_page = true;
+      nsp->addr = new_page_addr;
+      nsp->status = FRAME_MAPPED;
+      nsp->writable = true;
+      nsp->file = NULL;
+      nsp->offset = 0;
+      nsp->read_bytes = 0;
+      nsp->pagedir = t->pagedir;
+      nsp->sector = -1;
+      hash_insert (&t->pages, &nsp->hash_elem);
+      t->page_cnt++;
+
+      if (t->page_cnt > STACK_LIMIT)
+        /* Exceeded stack limit */
+        thread_exit ();
+
+      struct frame_entry *stack_frame = frame_get ();
+      stack_frame->page = p;
+
+      /* Install */
+      if ( !(pagedir_get_page (t->pagedir, nsp->addr) == NULL
+            && pagedir_set_page (t->pagedir, nsp->addr, stack_frame->kpage, nsp->writable)))
+        PANIC ("Error growing stack page!");
+    }
+
+    if (held_filesys_lock)
+      lock_acquire(&filesys_lock);
+    
+    return;
+  }
+
+  /* Handle fault according to page status */
+  if (FILE_MAPPED == p->status)
+  {
+    /* read buffer must be kpage */
+    struct frame_entry *frame = frame_get ();
+    uint8_t *kpage = frame->kpage;
+    frame->page = p;
+
+    /* Load page from filesys */
+    lock_acquire(&filesys_lock);
+    if (file_read_at (p->file, kpage, p->read_bytes, p->offset) != (int) p->read_bytes)
+    {
+      lock_release (&filesys_lock);
+      thread_exit ();
+    }
+    lock_release (&filesys_lock);
+
+    size_t zb = PGSIZE - p->read_bytes;
+    memset (kpage + p->read_bytes, 0, zb);
+
+    /* Loaded page, now to install into frame */
+    if ( !((NULL == pagedir_get_page (t->pagedir, p->addr)) && 
+          (pagedir_set_page (t->pagedir, p->addr, kpage, p->writable))))
+      thread_exit ();
+    p->status = FRAME_MAPPED;
+    p->frame = frame;
+
+    if (held_filesys_lock)
+      lock_acquire(&filesys_lock);
+
+    return;
+  }
+
+  if (SWAP_MAPPED == p->status)
+  {
+    struct frame_entry *frame = frame_get ();
+    uint8_t *kpage = frame->kpage;
+    frame->page = p;
+    p->frame = frame;
+
+    /* Load page from swap table */
+    swap_out (p);
+
+    if ( !((NULL == pagedir_get_page (t->pagedir, p->addr)) && 
+          (pagedir_set_page (t->pagedir, p->addr, kpage, p->writable))))
+      thread_exit ();
+    p->status = FRAME_MAPPED;
+
+    if (held_filesys_lock)
+      lock_acquire(&filesys_lock);
+
+    return;
+  }
+
+  if (NULL == pagedir_get_page (t->pagedir, fault_addr))
+    thread_exit ();
+
+  if (held_filesys_lock)
+    lock_acquire (&filesys_lock);
+
   /* Determine cause. */
   not_present = (f->error_code & PF_P) == 0;
   write = (f->error_code & PF_W) != 0;
   user = (f->error_code & PF_U) != 0;
 
-   /* Handle read-only page case */
-   if (not_present)
-   {
-      if ((user) && (write) && (is_stack_access(f->esp, fault_addr)))
-      {
-         if (expand_stack(f->esp, fault_addr))
-            return; // successfully expanded stack
-      }
-      else if ((user) && (spt_page_in (fault_addr)))
-         return;
-      else
-      {
-         syscall_exit (-1);
-         return;
-      }
-   }
-   else
-   {
-      syscall_exit (-1);
-      return;
-   }
+  if (!not_present && write)
+    thread_exit ();
 
   /* To implement virtual memory, delete the rest of the function
      body, and replace it with code that brings in the page to
@@ -184,5 +297,8 @@ page_fault (struct intr_frame *f)
           not_present ? "not present" : "rights violation",
           write ? "writing" : "reading",
           user ? "user" : "kernel");
+
+  printf("There is no crying in Pintos!\n");
+
   kill (f);
 }

@@ -1,48 +1,48 @@
-#ifndef VM_PAHE_H
+#ifndef VM_PAGE_H
 #define VM_PAGE_H
 
-#include <hash.h>
 #include <stdint.h>
-#include <stdlib.h>
-#include <stdbool.h>
-#include "filesys/file.h"
-#include "threads/thread.h"
-#include "threads/synch.h"
-#include "filesys/off_t.h"
+#include <hash.h>
 #include "devices/block.h"
+#include "threads/palloc.h"
+#include "filesys/file.h"
+#include "vm/frame.h"
+#include "threads/synch.h"
 
-/* Defined for uninitialized sector values */
-#define PUSHA_SZ 32
-#define BLOCK_SECTOR_NONE ((block_sector_t) -1)
+#define SECTOR_INIT ((size_t) -1)
+#define STACK_LIMIT (4 * BLOCK_SECTOR_SIZE)
+#define PUSHA 32
 
-/* a supplemental page table entry */
+/* struct and enum declarations */
+enum page_status
+  {
+    ZERO_FILL,         /* Uninitialized page */
+    FRAME_MAPPED,      /* Mapped in RAM */
+    SWAP_MAPPED,       /* Stored in swap */
+    FILE_MAPPED        /* Backed by file */
+  };
+
+/* page struct with hash element (hash_elem) */
+/* shared between page.c process.c load_segment exception.c */
 struct spt_entry
 {
-    void *vaddr;                /* Virtual address */
-    bool is_loaded;             /* True if the page is loaded into memory */
-    struct file *file;          /* Pointer to the file this page is loaded from, NULL otherwise */
-    off_t file_offset;          /* Offset in the file to read the data from */
-    uint32_t zero_bytes;        /* Number of bytes to zero after reading */
-    bool read_only;              /* True if the page is not writable */
-    struct hash_elem hash_elem; /* Hash table element */
-    struct thread *thread;      /* Pointer to the process that owns the page */
-    struct frame *frame;        /* Pointer to the physical frame, NULL if not loaded */
-    block_sector_t swap_index;  /* Starting sector on the swap device where page is stored */
-    bool private;               /* True if memory-mapped file pages can be written back to their original file */
-    off_t file_bytes;           /* Specifies the number of bytes to be read or written from a file */
+  struct hash_elem hash_elem; /* Hash table element. */
+  void *addr;                 /* Virtual address. */
+  /* ...other members... */
+  struct frame_entry *frame;  /* Occupied frame, if any */
+  enum page_status status;    /* Where the page should be */
+  bool is_stack_page;         /* If this is a stack page */
+  bool writable;              /* Can you write to this page */
+  struct file *file;          /* File to load page from */
+  off_t offset;               /* File offset */
+  size_t read_bytes;          /* Number of bytes to read from file */
+  int sector;                 /* Sector in the swap table */
+  uint32_t *pagedir;          /* Owner thread's pagedir */
 };
 
-void spt_destroy (void);
-struct spt_entry *spt_entry_create (void *vaddr, bool read_only);
-void spt_entry_remove (void *vaddr);
-struct spt_entry *spt_entry_lookup (const void *vaddr);
-bool spt_page_in (void *faddr);
-bool spt_page_out (struct spt_entry *page);
-bool spt_recent (struct spt_entry *page);
-bool spt_lock (const void *vaddr, bool writable);
-void spt_unlock (const void *vaddr);
+unsigned spt_hash_func (const struct hash_elem *, void *);
+bool spt_less_func (const struct hash_elem *, const struct hash_elem *, void *);
+void page_destructor (struct hash_elem *, void *);
+struct spt_entry *page_lookup (void *);
 
-unsigned spt_entry_hash (const struct hash_elem *e, void *aux UNUSED);
-bool spt_less_func (const struct hash_elem *a, const struct hash_elem *b);
-
-#endif /* VM_PAGE_H */
+#endif /* vm/page.h */

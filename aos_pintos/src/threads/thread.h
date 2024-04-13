@@ -2,11 +2,11 @@
 #define THREADS_THREAD_H
 
 #include <debug.h>
-#include <hash.h>
 #include <list.h>
+#include <hash.h>
 #include <stdint.h>
-#include "synch.h"
-#include "userprog/syscall.h"
+#include "filesys/file.h"
+#include "threads/synch.h"
 
 /* States in a thread's life cycle. */
 enum thread_status
@@ -26,6 +26,12 @@ typedef int tid_t;
 #define PRI_MIN 0                       /* Lowest priority. */
 #define PRI_DEFAULT 31                  /* Default priority. */
 #define PRI_MAX 63                      /* Highest priority. */
+
+struct openfile {
+  struct list_elem elem;
+  int fd;
+  struct file *file;
+};
 
 /* A kernel thread or user process.
 
@@ -76,7 +82,9 @@ typedef int tid_t;
    an assertion failure in thread_current(), which checks that
    the `magic' member of the running thread's `struct thread' is
    set to THREAD_MAGIC.  Stack overflow will normally change this
-   value, triggering the assertion. */
+   value, triggering the assertion.  (So don't add elements below 
+   THREAD_MAGIC.)
+*/
 /* The `elem' member has a dual purpose.  It can be an element in
    the run queue (thread.c), or it can be an element in a
    semaphore wait list (synch.c).  It can be used these two ways
@@ -85,41 +93,41 @@ typedef int tid_t;
    blocked state is on a semaphore wait list. */
 struct thread
   {
-      /* Owned by thread.c. */
-      tid_t tid;                          /* Thread identifier. */
-      enum thread_status status;          /* Thread state. */
-      char name[16];                      /* Name (for debugging purposes). */
-      uint8_t *stack;                     /* Saved stack pointer. */
-      int priority;                       /* Priority. */
-      struct list_elem allelem;           /* List element for all threads list. */
+    /* Owned by thread.c. */
+    tid_t tid;                          /* Thread identifier. */
+    enum thread_status status;          /* Thread state. */
+    char name[16];                      /* Name (for debugging purposes). */
+    uint8_t *stack;                     /* Saved stack pointer. */
+    int priority;                       /* Priority. */
+    struct list_elem allelem;           /* List element for all threads list. */
+    struct list executables;            /* List of files currently opened by this thread. */
+    struct list children;               /* List of child processes */
+    struct list_elem child_elem;        /* List element for parent's children list */
+    int next_fd;                        /* The next file descriptor to use when opening a file. */
+    char *command;                      /* The command given for this thread to run */
+    struct semaphore load_sema;         /* Synch for exec */
+    struct semaphore wait_sema;         /* Synch for process_wait */
+    struct semaphore exit_sema;         /* Synch for exit */
+    int exit_status;                    /* thread's exit status */
+    int load_success;                   /* loaded status of the executable */
 
-      /* Shared between thread.c and synch.c. */
-      struct list_elem elem;              /* List element. */
+    /* VM */
+    struct hash pages;              /* Supplemental page table */
+    uint32_t page_cnt;              /* current number of pages*/
 
-   #ifdef USERPROG
-      /* Owned by userprog/process.c. */
-      uint32_t *pagedir;                  /* Page directory. */
-   #endif
+    /* Each thread should probably have its own supplemental page table */
 
-      /* Shared between page.c/frame.c/swap.c */
-      void *stack_bottom;                 /* Bottom of stack for dynamic growth. */
-      void *esp;                          /* Current stack pointer, for syscalls or page faults. */
-      struct hash *pages;                 /* hash table implementation of a page table */
-      struct list file_map;               /* list of memory mapped files */
+    /* Shared between thread.c and synch.c. */
+    struct list_elem elem;              /* List element. */
 
-      /* Shared between syscall/process.c */
-      struct list             file_list;        /* list of process files */
-      struct list             child_list;       /* list of child processes */
-      struct list             lock_list;        /* used to keep track of locks the thread holds */
-      struct lock             child_list_lock;  /* lock held in the lock list */
-      struct child_process    *child;           /* point to child process */
-      struct file             *executable;      /* use for denying writes to executables */
-      int                     fd;               /* file descriptor */
-      tid_t                   parent;           /* id of the parent thread */
+#ifdef USERPROG
+    /* Owned by userprog/process.c. */
+    uint32_t *pagedir;                  /* Page directory. */
+#endif
 
-      /* Owned by thread.c. */
-      unsigned magic;                     /* Detects stack overflow. */
-   };
+    /* Owned by thread.c. */
+    unsigned magic;                     /* Detects stack overflow. */
+  };
 
 /* If false (default), use round-robin scheduler.
    If true, use multi-level feedback queue scheduler.
@@ -149,6 +157,8 @@ void thread_yield (void);
 typedef void thread_action_func (struct thread *t, void *aux);
 void thread_foreach (thread_action_func *, void *);
 
+struct thread *get_thread_by_tid (tid_t);
+
 int thread_get_priority (void);
 void thread_set_priority (int);
 
@@ -156,10 +166,5 @@ int thread_get_nice (void);
 void thread_set_nice (int);
 int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
-
-/* User implemented functions */
-int thread_alive (int pid);
-struct child_process* child_process_insert (int pid);
-void thread_lock_release (void);
 
 #endif /* threads/thread.h */

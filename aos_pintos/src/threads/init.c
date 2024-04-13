@@ -28,6 +28,7 @@
 #include "userprog/gdt.h"
 #include "userprog/syscall.h"
 #include "userprog/tss.h"
+#include "vm/swap.h"
 #else
 #include "tests/threads/tests.h"
 #endif
@@ -70,12 +71,15 @@ static void locate_block_devices (void);
 static void locate_block_device (enum block_type, const char *name);
 #endif
 
+// int main (void) NO_RETURN;
+
 /* Pintos main program. */
-int main (void)
+int
+main (void)
 {
   char **argv;
 
-  /* Clear BSS. */
+  /* Clear BSS. */  
   bss_init ();
 
   /* Break command line into arguments and parse options. */
@@ -85,10 +89,10 @@ int main (void)
   /* Initialize ourselves as a thread so we can use locks,
      then enable console locking. */
   thread_init ();
-  console_init ();
+  console_init ();  
 
   /* Greet user. */
-  printf ("Pintos booting with %'" PRIu32 " kB RAM...\n",
+  printf ("Pintos booting with %'"PRIu32" kB RAM...\n",
           init_ram_pages * PGSIZE / 1024);
 
   /* Initialize memory system. */
@@ -124,8 +128,10 @@ int main (void)
   filesys_init (format_filesys);
 #endif
 
-  printf ("Boot complete.\n");
+  swap_init ();
 
+  printf ("Boot complete.\n");
+  
   /* Run actions specified on kernel command line. */
   run_actions (argv);
 
@@ -140,7 +146,8 @@ int main (void)
 
    The start and end of the BSS segment is recorded by the
    linker as _start_bss and _end_bss.  See kernel.lds. */
-static void bss_init (void)
+static void
+bss_init (void) 
 {
   extern char _start_bss, _end_bss;
   memset (&_start_bss, 0, &_end_bss - &_start_bss);
@@ -150,7 +157,8 @@ static void bss_init (void)
    kernel virtual mapping, and then sets up the CPU to use the
    new page directory.  Points init_page_dir to the page
    directory it creates. */
-static void paging_init (void)
+static void
+paging_init (void)
 {
   uint32_t *pd, *pt;
   size_t page;
@@ -180,12 +188,13 @@ static void paging_init (void)
      new page tables immediately.  See [IA32-v2a] "MOV--Move
      to/from Control Registers" and [IA32-v3a] 3.7.5 "Base Address
      of the Page Directory". */
-  asm volatile("movl %0, %%cr3" : : "r"(vtop (init_page_dir)));
+  asm volatile ("movl %0, %%cr3" : : "r" (vtop (init_page_dir)));
 }
 
 /* Breaks the kernel command line into words and returns them as
    an argv-like array. */
-static char **read_command_line (void)
+static char **
+read_command_line (void) 
 {
   static char *argv[LOADER_ARGS_LEN / 2 + 1];
   char *p, *end;
@@ -195,7 +204,7 @@ static char **read_command_line (void)
   argc = *(uint32_t *) ptov (LOADER_ARG_CNT);
   p = ptov (LOADER_ARGS);
   end = p + LOADER_ARGS_LEN;
-  for (i = 0; i < argc; i++)
+  for (i = 0; i < argc; i++) 
     {
       if (p >= end)
         PANIC ("command line arguments overflow");
@@ -219,14 +228,15 @@ static char **read_command_line (void)
 
 /* Parses options in ARGV[]
    and returns the first non-option argument. */
-static char **parse_options (char **argv)
+static char **
+parse_options (char **argv) 
 {
   for (; *argv != NULL && **argv == '-'; argv++)
     {
       char *save_ptr;
       char *name = strtok_r (*argv, "=", &save_ptr);
       char *value = strtok_r (NULL, "", &save_ptr);
-
+      
       if (!strcmp (name, "-h"))
         usage ();
       else if (!strcmp (name, "-q"))
@@ -266,15 +276,16 @@ static char **parse_options (char **argv)
      for reproducibility.  To fix this, give the "-r" option to
      the pintos script to request real-time execution. */
   random_init (rtc_get_time ());
-
+  
   return argv;
 }
 
 /* Runs the task specified in ARGV[1]. */
-static void run_task (char **argv)
+static void
+run_task (char **argv)
 {
   const char *task = argv[1];
-
+  
   printf ("Executing '%s':\n", task);
 #ifdef USERPROG
   process_wait (process_execute (task));
@@ -286,18 +297,20 @@ static void run_task (char **argv)
 
 /* Executes all of the actions specified in ARGV[]
    up to the null pointer sentinel. */
-static void run_actions (char **argv)
+static void
+run_actions (char **argv) 
 {
   /* An action. */
-  struct action
-  {
-    char *name;                     /* Action name. */
-    int argc;                       /* # of args, including action name. */
-    void (*function) (char **argv); /* Function to execute action. */
-  };
+  struct action 
+    {
+      char *name;                       /* Action name. */
+      int argc;                         /* # of args, including action name. */
+      void (*function) (char **argv);   /* Function to execute action. */
+    };
 
   /* Table of supported actions. */
-  static const struct action actions[] = {
+  static const struct action actions[] = 
+    {
       {"run", 2, run_task},
 #ifdef FILESYS
       {"ls", 1, fsutil_ls},
@@ -307,7 +320,7 @@ static void run_actions (char **argv)
       {"append", 2, fsutil_append},
 #endif
       {NULL, 0, NULL},
-  };
+    };
 
   while (*argv != NULL)
     {
@@ -315,7 +328,7 @@ static void run_actions (char **argv)
       int i;
 
       /* Find action name. */
-      for (a = actions;; a++)
+      for (a = actions; ; a++)
         if (a->name == NULL)
           PANIC ("unknown action `%s' (use -h for help)", *argv);
         else if (!strcmp (*argv, a->name))
@@ -330,11 +343,13 @@ static void run_actions (char **argv)
       a->function (argv);
       argv += a->argc;
     }
+  
 }
 
 /* Prints a kernel command line help message and powers off the
    machine. */
-static void usage (void)
+static void
+usage (void)
 {
   printf ("\nCommand line syntax: [OPTION...] [ACTION...]\n"
           "Options must precede actions.\n"
@@ -370,13 +385,14 @@ static void usage (void)
 #ifdef USERPROG
           "  -ul=COUNT          Limit user memory to COUNT pages.\n"
 #endif
-  );
+          );
   shutdown_power_off ();
 }
 
 #ifdef FILESYS
 /* Figure out what block devices to cast in the various Pintos roles. */
-static void locate_block_devices (void)
+static void
+locate_block_devices (void)
 {
   locate_block_device (BLOCK_FILESYS, filesys_bdev_name);
   locate_block_device (BLOCK_SCRATCH, scratch_bdev_name);
@@ -389,7 +405,8 @@ static void locate_block_devices (void)
    block device with the given NAME, if NAME is non-null,
    otherwise the first block device in probe order of type
    ROLE. */
-static void locate_block_device (enum block_type role, const char *name)
+static void
+locate_block_device (enum block_type role, const char *name)
 {
   struct block *block = NULL;
 

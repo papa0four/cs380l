@@ -1,511 +1,426 @@
 #include "userprog/syscall.h"
 #include <stdio.h>
-#include <stdbool.h>
+#include <string.h>
 #include <syscall-nr.h>
-#include "syscall.h"
 #include "threads/interrupt.h"
 #include "threads/thread.h"
-#include "threads/malloc.h"
-#include "threads/synch.h"
 #include "threads/vaddr.h"
+#include "threads/palloc.h"
+#include "threads/synch.h"
+#include "filesys/filesys.h"
+#include "filesys/file.h"
 #include "userprog/pagedir.h"
 #include "userprog/process.h"
-#include <user/syscall.h>
-#include "devices/input.h"
 #include "devices/shutdown.h"
-#include "filesys/file.h"
-#include "filesys/filesys.h"
+#include "devices/input.h"
+#include "vm/page.h"
 
-#define ARG1      1
-#define ARG2      2
-#define ARG3      3
-#define MAX_ARGS  3
-#define WORD_SZ   4
-#define PAGE_SZ   4096
 
-typedef int pid_t;
+#define BUF_MAX 200
 
+static bool valid_mem_access (const void *);
 static void syscall_handler (struct intr_frame *);
-int file_add (struct file *file_name);
-void get_args (struct intr_frame *f, int *argv, int argc);
-void syscall_halt (void);
-pid_t syscall_exec (const char *cmd_line);
-int syscall_wait (pid_t pid);
-bool syscall_create (const char *file, unsigned initial_size);
-bool syscall_remove (const char *file);
-int syscall_open (const char *file);
-int syscall_filesize (int fd);
-int syscall_read (int fd, void *buffer, unsigned size);
-int syscall_write (int fd, const void *buffer, unsigned size);
-void syscall_seek (int fd, unsigned position);
-unsigned syscall_tell (int fd);
-void syscall_close (int fd);
-bool syscall_symlink (const char *target, const char *linkpath);
-void validate_ptr (const void *vaddr);
-void validate_str (const void *str);
-void validate_buffer (const void *buf, unsigned size);
+static void userprog_halt (void);
+static void userprog_exit (int);
+static pid_t userprog_exec (const char *);
+static int userprog_wait (pid_t);
+static bool userprog_create (const char *, unsigned);
+static bool userprog_remove (const char *);
+static int userprog_open (const char *);
+static int userprog_filesize (int);
+static int userprog_read (int, void *, unsigned);
+static int userprog_write (int, const void *, unsigned);
+static void userprog_seek (int, unsigned);
+static unsigned userprog_tell (int);
+static void userprog_close (int);
+static bool syscall_symlink (const char *target, const char *linkpath);
+static struct openfile * file_get (int);
 
-/*
- * System call initializer
- * It handles the set up for system call operations.
- */
 void
-syscall_init (void)
+syscall_init (void) 
 {
   intr_register_int (0x30, 3, INTR_ON, syscall_handler, "syscall");
-
-  /* initialize global file_system_lock */
-  lock_init (&file_system_lock);
+  lock_init (&filesys_lock);
 }
 
-/*
- * This method handles for various case of system command.
- * This handler invokes the proper function call to be carried
- * out base on the command line.
- */
-static void
-syscall_handler (struct intr_frame *f) 
+static bool
+valid_mem_access (const void *up)
 {
-  /* Update the current thread's esp to the stack pointer at time of syscall. */
-  thread_current ()->esp = f->esp;
+	// struct thread *t = thread_current ();
+
+	if (up == NULL)
+		return false;
+  if (is_kernel_vaddr (up))
+    return false;
   
-  int argv[MAX_ARGS] = { 0 };
-  int esp = translate_vaddr ((const void *) f->esp);
+	return true;
+}
+
+static void
+syscall_handler (struct intr_frame *f UNUSED) 
+{
+  void *esp = f->esp;
+  uint32_t *eax = &f->eax;
+
+  if(!valid_mem_access ( ((int *) esp)))
+    userprog_exit (-1);
+  if(!valid_mem_access ( ((int *) esp) + 1))
+    userprog_exit (-1);
 
   char *target    = NULL;
   char *linkpath  = NULL;
-  
+
   switch (* (int *) esp)
   {
-    case SYS_HALT:
-      syscall_halt();
-      break;
-      
-    case SYS_EXIT:
-      /* Populate argv with required arguments */
-      get_args (f, &argv[0], ARG1);
-      syscall_exit (argv[0]);
-      break;
-      
-    case SYS_EXEC:
-      /* Populate argv with required arguments */
-      get_args (f, &argv[0], ARG1);
-      /* Check command line validity */
-      validate_str ((const void *) argv[0]);
-      /* Retrieve pointer to the page */
-      argv[0] = translate_vaddr  ((const void *) argv[0]);
-      /* set return value and execute command */
-      f->eax = syscall_exec ((const void *) argv[0]);
-      break;
-      
-    case SYS_WAIT:
-      /* Populate argv with required arguments */
-      get_args (f, &argv[0], ARG1);
-      /* Set return value and execute command */
-      f->eax = syscall_wait (argv[0]);
-      break;
-      
-    case SYS_CREATE:
-      /* Populate argv with required arguments */
-      get_args (f, &argv[0], ARG2);
-      /* Check command line validity */
-      validate_str ((const void *) argv[0]);
-      /* Retrieve pointer to the page */
-      argv[0] = translate_vaddr  ((const void *) argv[0]);
-      /* set return value and execute command */
-      f->eax = syscall_create ((const char *) argv[0], (unsigned) argv[1]);
-      break;
-      
-    case SYS_REMOVE:
-      /* Populate argv with required arguments */
-      get_args (f, &argv[0], ARG1);
-      /* Check command line validity */
-      validate_str ((const void*)argv[0]);
-      /* Retrieve pointer to the page */
-      argv[0] = translate_vaddr  ((const void *) argv[0]);
-      /* Set return value and execute command */
-      f->eax = syscall_remove ((const char *)argv[0]);
-      break;
-      
-    case SYS_OPEN:
-      /* Populate argv with required arguments */
-      get_args (f, &argv[0], ARG1);
-      /* Check command line validity */
-       validate_str((const void*)argv[0]);
-      /* Retrieve pointer to the page */
-      argv[0] = translate_vaddr ((const void *)argv[0]);
-      /* Set return value and execute command */
-      f->eax = syscall_open((const char *)argv[0]);
-      break;
-      
-    case SYS_FILESIZE:
-      /* Populate argv with the required arguments */
-      get_args (f, &argv[0], ARG1);
-      /* Set return value and execute command */
-      f->eax = syscall_filesize(argv[0]);
-      break;
-      
-    case SYS_READ:
-      /* Populate argv with required arguments */
-      get_args (f, &argv[0], ARG3);
-      /* Checl buffer validity */
-      validate_buffer ((const void*) argv[1], (unsigned) argv[2]);
-      /* Retrieve pointer to the page */
-      argv[1] = translate_vaddr  ((const void *) argv[1]); 
-      /* Set the return value and execute command */
-      f->eax = syscall_read (argv[0], (void *) argv[1], (unsigned) argv[2]);
-      break;
-      
-    case SYS_WRITE:
-      /* Populate argv with required arguments */
-      get_args (f, &argv[0], ARG3);
-      /* Check buffer validity */
-      validate_buffer ((const void*) argv[1], (unsigned) argv[2]);
-      /* Retrieve pointer to the page */
-      argv[1] = translate_vaddr  ((const void *) argv[1]); 
-      /* Set the return value and execute command */
-      f->eax = syscall_write (argv[0], (const void *) argv[1], (unsigned) argv[2]);
-      break;
-      
-    case SYS_SEEK:
-      /* Populate argv with required arguments */
-      get_args (f, &argv[0], ARG2);
-      /* Execute command */
-      syscall_seek (argv[0], (unsigned)argv[1]);
-      break;
-      
-    case SYS_TELL:
-      /* Populate argv with required arguments */
-      get_args (f, &argv[0], ARG1);
-      /* Set return value and execute command */
-      f->eax = syscall_tell (argv[0]);
-      break;
-    
-    case SYS_CLOSE:
-      /* Populate argv with required arguments */
-      get_args (f, &argv[0], ARG1);
-      /* execute command */
-      syscall_close(argv[0]);
-      break;
-    
-     case SYS_SYMLINK:
-      /* Populate arguments from stack using WORD_SZ pointer arithmetic */
-      target    = *(char **)((char*)f->esp + 4);
-      linkpath  = *(char **)((char*)f->esp + 8);
-      /* call symlink helper function to create symbolic link */
+  	case SYS_HALT:
+  	  userprog_halt ();
+  	  break;
+
+  	case SYS_EXIT:
+    {
+  	  int status = *(((int *) esp) + 1);
+  	  userprog_exit (status);
+  	  break;
+    }
+
+  	case SYS_EXEC:
+    {
+  	  const char *cmd_line = *(((char **) esp) + 1);
+  	  *eax = (uint32_t) userprog_exec (cmd_line);
+  	  break;
+    }
+
+  	case SYS_WAIT:
+    {
+  	  pid_t pid = *(((pid_t *) esp) + 1);
+  	  *eax = (uint32_t) userprog_wait (pid);
+  	  break;
+    }
+
+  	case SYS_CREATE:
+    {
+  	  const char *file = *(((char **) esp) + 1);
+  	  unsigned initial_size = *(((unsigned *) esp) + 2);
+  	  *eax = (uint32_t) userprog_create (file, initial_size);
+  	  break;
+    }
+
+  	case SYS_REMOVE:
+    {
+  	  const char *file = *(((char **) esp) + 1);
+  	  *eax = (uint32_t) userprog_remove (file);
+  	  break;
+    }
+
+  	case SYS_OPEN:
+    {
+  	  const char *file = *(((char **) esp) + 1);
+  	  *eax = (uint32_t) userprog_open (file);
+  	  break;
+    }
+
+  	case SYS_FILESIZE:
+    {
+  	  int fd = *(((int *) esp) + 1);
+  	  *eax = (uint32_t) userprog_filesize (fd);
+  	  break;
+    }
+
+  	case SYS_READ:
+    {
+  	  int fd = *(((int *) esp) + 1);
+  	  void *buffer = (void *) *(((int **) esp) + 2);
+  	  unsigned size = *(((unsigned *) esp) + 3);
+  	  *eax = (uint32_t) userprog_read (fd, buffer, size);
+  	  break;
+    }
+
+  	case SYS_WRITE:
+    {
+  	  int fd = *(((int *) esp) + 1);
+  	  const void *buffer = (void *) *(((int **) esp) + 2);
+  	  unsigned size = *(((unsigned *) esp) + 3);
+  	  *eax = (uint32_t) userprog_write (fd, buffer, size);
+  	  break;
+    }
+
+  	case SYS_SEEK:
+    {
+  	  int fd = *(((int *) esp) + 1);
+  	  unsigned position = *(((unsigned *) esp) + 2);
+  	  userprog_seek (fd, position);
+  	  break;
+    }
+
+  	case SYS_TELL:
+    {
+  	  int fd = *(((int *) esp) + 1);
+  	  *eax = (uint32_t) userprog_tell (fd);
+  	  break;
+    }
+
+  	case SYS_CLOSE:
+    {
+  	  int fd = *(((int *) esp) + 1);
+  	  userprog_close (fd);
+  	  break;
+    }
+
+    case SYS_SYMLINK:
+    {
+      target    = *(char **)((char *) f->esp + 4);
+      linkpath  = *(char **)((char *) f->esp + 8);
       bool success = syscall_symlink (target, linkpath);
-      /* Set return value to success or -1 on failure*/
-      f->eax = success ? 0 : -1;
+      *eax = success ? 0 : -1;
       break;
-      
+    }
+
     default:
-      f->eax = ERROR;
+      *eax = -1;
       break;
   }
 }
 
-/* Start User Implemented and Helper Functions */
-/* get_args:
- * @brief - retrieves the appropriate amount of args from the stack frame.
- * @param (struct intr_frame *) f - a pointer to the current stack frame.
- * @param (int *) argv - a pointer to the memory locations of the arguments
- *                       on the stack frame.
- * @param (int) argc - the current number of arguments on the stack frame.
- * @return (void) - N/A
-*/
-void get_args (struct intr_frame *f, int *argv, int argc)
+static void
+userprog_halt ()
 {
-  int *ptr;
-  for (int i = 0; i < argc; i++)
-  {
-    ptr = (int *) f->esp + i + 1;
-    validate_ptr ((const void *) ptr);
-    argv[i] = *ptr;
-  }
+	shutdown_power_off ();
 }
 
-/* halt:
- * @brief - calls shutdown_power_off (shutdown.h) to exit the current process abruptly.
- * @param (void) - N/A
- * @return (void) - N/A
- */
-void syscall_halt (void)
-{
-  shutdown_power_off(); // from shutdown.h
-}
-
-/* syscall_exit:
- * @brief - Checks if the current thread to exit is a child. If it is,
- *          update the child's parent appropriately.
- * @param (int) status - the process exit status
- * @return (void) - N/A
- */
-void syscall_exit (int status)
+static void
+userprog_exit (int status)
 {
   struct thread *cur = thread_current ();
-  if ((thread_alive(cur->parent)) && (cur->child))
-  {
-    if (status < 0)
-      status = -1;
-    
-    cur->child->status = status;
-  }
-  printf ("%s: exit(%d)\n", cur->name, status);
-  thread_exit ();
+  cur->exit_status = status;
+	thread_exit ();
 }
 
-/* syscall_exec
- * @brief - Executes the command line and returns the pid of the thread
- *          currently executing the command.
- * @param (const char *) cmd_line - a pointer to the command line buffer
- * @return (pid_t) - on success, returns the pid of the process executed
- *                   otherwise returns ERROR (-1).
- */
-pid_t syscall_exec (const char* cmd_line)
+static pid_t
+userprog_exec (const char *cmd_line)
 {
-    pid_t pid = process_execute (cmd_line);
-    struct child_process *child_process_ptr = child_process_find (pid);
-    if (!child_process_ptr)
-    {
-      return ERROR;
-    }
-    /* check if process if loaded */
-    if (NOT_LOADED == child_process_ptr->load_status)
-    {
-      sema_down (&child_process_ptr->load_sema);
-    }
-    /* check if process failed to load */
-    if (LOAD_FAIL == child_process_ptr->load_status)
-    {
-      child_process_remove (child_process_ptr);
-      return ERROR;
-    }
-    return pid;
+  tid_t child_tid = TID_ERROR;
+
+  if(!valid_mem_access (cmd_line))
+    userprog_exit (-1);
+
+  child_tid = process_execute (cmd_line);
+
+	return child_tid;
 }
 
-/* syscall_wait:
- * @brief - calls process_wait (process.h), to wait on a process to execute.
- * @param (pid_t) pid - the process ID to wait on.
- * @return (int) - returns the value received from process_wait().
- */
-int syscall_wait (pid_t pid)
+static int
+userprog_wait (pid_t pid)
 {
   return process_wait (pid);
 }
 
-/* syscall_create:
- * @brief - calls filesys_create (filesys.h) to create a file of the appropriate
- *          name and size.
- * @param (const char *) file - a pointer to the name of the file to be created.
- * @param (unsigned) initial_size - the size of the file upon creation.
- * @return (bool) - returns the value received from filesys_create().
- */
-bool syscall_create (const char *file, unsigned initial_size)
+static bool
+userprog_create (const char *file, unsigned initial_size)
 {
-  lock_acquire (&file_system_lock);
-  bool successful = filesys_create (file, initial_size); // from filesys.h
-  lock_release (&file_system_lock);
-  return successful;
-}
-
-/* syscall_remove:
- * @brief - calls filesys_remove (filesys.h) to remove the provided file.
- * @param (const char *) file - a pointer to the name of the file to remove.
- * @return (bool) - returns the value received from filesys_remove().
- */
-bool syscall_remove (const char* file)
-{
-  lock_acquire (&file_system_lock);
-  bool successful = filesys_remove (file); // from filesys.h
-  lock_release (&file_system_lock);
-  return successful;
-}
-
-/* syscall_open:
- * @brief - calls filesys_open (filesys.h) to open the provided file by name
- * @param (const char *) file - a pointer to the name of the file to open.
- * @return (int) - returns the appropriate file descriptor given to the open
- *                 file on success, or ERROR (-1) on failure.
- */
-int syscall_open (const char *file)
-{
-  lock_acquire (&file_system_lock);
-  struct file *file_ptr = filesys_open (file); // from filesys.h
-  if (!file_ptr)
+  bool retval;
+  if(valid_mem_access(file))
   {
-    lock_release (&file_system_lock);
-    return ERROR;
+    lock_acquire (&filesys_lock);
+    retval = filesys_create (file, initial_size);
+    lock_release (&filesys_lock);
+    return retval;
   }
-  int fd = file_add (file_ptr);
-  lock_release (&file_system_lock);
-  return fd;
+	else
+    userprog_exit (-1);
+
+  return false;
 }
 
-/* syscall_filesize:
- * @brief - returns the size of the provided file (in bytes)
- * @param (int) fd - the file descriptor for the file to retrieve the size.
- * @return (int) - on success, returns an integer value of the size of the
- *                 file, or ERROR (-1) on failure.
- */
-int syscall_filesize (int fd)
+static bool
+userprog_remove (const char *file)
 {
-  lock_acquire (&file_system_lock);
-  struct file *file_ptr = file_get (fd);
-  if (!file_ptr)
+  bool retval;
+	if(valid_mem_access(file))
   {
-    lock_release (&file_system_lock);
-    return ERROR;
+    lock_acquire (&filesys_lock);
+    retval = filesys_remove (file);
+    lock_release (&filesys_lock);
+    return retval;
   }
-  int fsize = file_length (file_ptr); // from file.h
-  lock_release (&file_system_lock);
-  return fsize;
+  else
+    userprog_exit (-1);
+
+  return false;
 }
 
-/* syscall_read:
- * @brief - determines the appropriate INPUT method and attempts to read the file
- *          provided by the file descriptor, placing its contents into the buffer.
- *          If the INPUT device is a file, an attempt to call file_read (file.h)
- *          will be made to read the file. If the INPUT device is deemed "user",
- *          an attempt to read from input_getc (input.h) will be made.
- * @param (int) fd - the file descriptor of the file to read.
- * @param (void *) buffer - the container to store the contents of the file.
- * @param (unsigned) size - the amount of bytes to read from the INPUT device.
- * @return (int) - on success, returns an integer value of the amount of bytes
- *                 read from the INPUT device, or ERROR (-1) on failure.
- */
-int syscall_read (int fd, void *buffer, unsigned size)
+static int
+userprog_open (const char *file)
 {
-  lock_acquire (&file_system_lock);
-  if (0 >= size)
+	if(valid_mem_access ((void *) file))
   {
-    lock_release (&file_system_lock);
-    return size;
+    struct openfile *new = palloc_get_page (0);
+    new->fd = thread_current ()->next_fd;
+    thread_current ()->next_fd++;
+
+    lock_acquire (&filesys_lock);
+    new->file = filesys_open(file);
+    lock_release (&filesys_lock);
+
+    if (new->file == NULL)
+      return -1;
+    list_push_back(&thread_current ()->executables, &new->elem);
+    return new->fd;
   }
-  
-  if (STD_INPUT == fd)
+	else
+    userprog_exit (-1);
+
+	return -1;
+
+}
+
+static int
+userprog_filesize (int fd)
+{
+  int retval;
+  struct openfile *of = NULL;
+	of = file_get (fd);
+  if (of == NULL)
+    return 0;
+
+  lock_acquire (&filesys_lock);
+  retval = file_length (of->file);
+  lock_release (&filesys_lock);
+
+  return retval;
+}
+
+static int
+userprog_read (int fd, void *buffer, unsigned size)
+{
+  lock_acquire (&filesys_lock);
+  int bytes_read = 0;
+  struct openfile *of = NULL;
+
+	if (!valid_mem_access(buffer))
   {
-    uint8_t *buffer_copy = (uint8_t *) buffer;
-    for (unsigned i = 0; i < size; i++)
-      /* retrieve pressed key from the input buffer */
-      buffer_copy[i] = input_getc (); // from input.h
+    lock_release (&filesys_lock);
+    userprog_exit (-1);
+  }
+
+  // bufChar = (char *)buffer;
+	if(0 == fd)
+  {
+    while(size > 0)
+    {
+      input_getc();
+      size--;
+      bytes_read++;
+    }
+    lock_release (&filesys_lock);
+  }
+  else
+  {
+    of = file_get (fd);
+    if (of == NULL)
+    {
+      lock_release (&filesys_lock);
+      return -1;
+    }
     
-    lock_release (&file_system_lock);
-    return size;
+    bytes_read = file_read (of->file, buffer, size);
+    lock_release (&filesys_lock);
   }
-  
-  /* read from file */
-  struct file *file_ptr = file_get (fd);
-  if (!file_ptr)
-  {
-    lock_release (&file_system_lock);
-    return ERROR;
-  }
-  int bytes_read = file_read (file_ptr, buffer, size); // from file.h
-  lock_release (&file_system_lock);
+
   return bytes_read;
 }
 
-/* syscall_write:
- * @brief - determines the appropriate OUTPUT method and attempts to write to the file
- *          provided by the file descriptor, retrieving its contents from the buffer.
- *          If the OUTPUT device is a file, an attempt to call file_write (file.h)
- *          will be made to read the file. If the OUTPUT device is deemed "user",
- *          an attempt to write to putbuf (stdio.h) will be made.
- * @param (int) fd - the file descriptor of the file to write.
- * @param (void *) buffer - the container to retrieve the contents of the file.
- * @param (unsigned) size - the amount of bytes to write to the OUTPUT device.
- * @return (int) - on success, returns an integer value of the amount of bytes
- *                 written to the OUTPUT device, or ERROR (-1) on failure.
- */
-int syscall_write (int fd, const void * buffer, unsigned size)
+static int
+userprog_write (int fd, const void *buffer, unsigned size)
 {
-  lock_acquire (&file_system_lock);
-  if (0 >= size)
+  lock_acquire (&filesys_lock);
+  int bytes_written = 0;
+  char *bufChar = NULL;
+  struct openfile *of = NULL;
+
+	if (!valid_mem_access(buffer))
   {
-    lock_release (&file_system_lock);
-    return size;
+    lock_release (&filesys_lock); 
+		userprog_exit (-1);
   }
-  if (STD_OUTPUT == fd)
+  bufChar = (char *)buffer;
+  if(1 == fd)
   {
-    putbuf (buffer, size); // from stdio.h
-    lock_release (&file_system_lock);
-    return size;
+    /* break up large buffers */
+    while(size > BUF_MAX)
+    {
+      putbuf(bufChar, BUF_MAX);
+      bufChar += BUF_MAX;
+      size -= BUF_MAX;
+      bytes_written += BUF_MAX;
+    }
+
+    putbuf(bufChar, size);
+    bytes_written += size;
+    lock_release (&filesys_lock);
   }
-  
-  // start writing to file
-  struct file *file_ptr = file_get (fd);
-  if (!file_ptr)
+  else
   {
-    lock_release (&file_system_lock);
-    return ERROR;
+    of = file_get (fd);
+    if (of == NULL)
+    {
+      lock_release (&filesys_lock);
+      return 0;
+    }
+
+    bytes_written = file_write (of->file, buffer, size);
+    lock_release (&filesys_lock);
   }
-  int bytes_written = file_write (file_ptr, buffer, size); // file.h
-  lock_release (&file_system_lock);
+
   return bytes_written;
 }
 
-/* syscall_seek:
- * @brief - moves the file cursor to the desired position based upon the value passed.
- * @param (int) fd - the file descriptor of the file.
- * @param (unsigned) - the desired position within the file to seek to.
- * @return (void) - N/A
- */
-void syscall_seek (int fd, unsigned position)
+static void
+userprog_seek (int fd, unsigned position)
 {
-  lock_acquire(&file_system_lock);
-  struct file *file_ptr = file_get (fd);
-  if (!file_ptr)
-  {
-    lock_release (&file_system_lock);
+	struct openfile *of = NULL;
+  of = file_get (fd);
+  if (of == NULL)
     return;
-  }
-  file_seek (file_ptr, position);
-  lock_release (&file_system_lock);
+
+  lock_acquire (&filesys_lock);
+  file_seek (of->file, position);
+  lock_release (&filesys_lock);
 }
 
-/* syscall_tell:
- * @brief - determines the current file position offset by calling file_tell (file.h).
- * @param (int) fd - the file descriptor of the file to determine the offset.
- * @return (unsigned) - returns the retrieved value of file_tell() or ERROR (-1) on failure.
- */
-unsigned syscall_tell (int fd)
+static unsigned
+userprog_tell (int fd)
 {
-  lock_acquire (&file_system_lock);
-  struct file *file_ptr = file_get (fd);
-  if (!file_ptr)
-  {
-    lock_release (&file_system_lock);
-    return ERROR;
-  }
-  off_t offset = file_tell (file_ptr); //from file.h
-  lock_release (&file_system_lock);
-  return offset;
+  unsigned retval;
+	struct openfile *of = NULL;
+  of = file_get (fd);
+  if (of == NULL)
+    return 0;
+
+  lock_acquire (&filesys_lock);
+  retval = file_tell (of->file);
+  lock_release (&filesys_lock);
+
+  return retval;
 }
 
-/* syscall_close:
- * @brief - calls the helper function process_file_close (syscall.h) to close the current file.
- * @param (int) fd - the file descriptor of the file to close.
- * @return (void) - N/A
- */
-void syscall_close (int fd)
+static void
+userprog_close (int fd)
 {
-  lock_acquire (&file_system_lock);
-  process_file_close (fd);
-  lock_release (&file_system_lock);
+	struct openfile *of = NULL;
+  of = file_get (fd);
+  if (of == NULL)
+    return;
+
+  lock_acquire (&filesys_lock);
+  file_close (of->file);
+  lock_release (&filesys_lock);
+
+  list_remove (&of->elem);
+  palloc_free_page (of);
 }
 
-/* syscall_symlink:
- * @brief - determined validity of parameters passed and calls filesys_open/filesys_symlink
- *          (filesys.h) to open and create the symbolic link and file_close (file.h) to
- *          close the target file after the link was created
- * @param (const char *) target - a pointer to the target link path.
- * @param (const char *) linkpath - a pointer to the path created by the symbolic link.
- * @return (bool) - returns the value retrieved from filesys_symlink (filesys.h) or false
- *                  on failure.
- */
-bool syscall_symlink (const char *target, const char *linkpath)
+static bool syscall_symlink (const char *target, const char * linkpath)
 {
-  /* pointer validity check */
   if ((!is_user_vaddr (target)) || (!is_user_vaddr (linkpath)))
     return false;
 
@@ -517,255 +432,22 @@ bool syscall_symlink (const char *target, const char *linkpath)
     return false;
 
   file_close (target_file);
-  bool success = filesys_symlink ((char *) target, (char *) linkpath); // filesys.h
+  bool success = filesys_symlink ((char *) target, (char *) linkpath);
   return success;
 }
 
-
-/* validate_ptr:
- * @brief - a function to check if pointer is valid based upon the known user virtual memory space.
- * @param (const void *) vaddr - the address of the item to determine is validity.
- * @return (void) - N/A
- */
-void validate_ptr (const void *vaddr)
-{
-  if ((USER_VADDR_BOTTOM > vaddr) || (!is_user_vaddr (vaddr)))
-    // virtual memory address is not reserved for us (out of bound)
-    syscall_exit (ERROR);
-
-  // Cast the void pointer to a char pointer for the arithmetic operation
-  char *char_vaddr = (char *) vaddr;
-
-  // Check the next 3 bytes
-  for (int i = 0; i < WORD_SZ; i++) 
-  {
-    void *addr = char_vaddr + i;
-    if ((!is_user_vaddr (addr)) || (NULL == pagedir_get_page (thread_current ()->pagedir, addr))) 
-      syscall_exit (ERROR);
-  }
-}
-
-/* valdiate_str:
- * @brief - this function is meant to check if string is valid via its page address.
- * @param (const void *) str - a pointer to the string that requires validation.
- * @return (void) - N/A
- */
-void validate_str (const void *str)
-{
-  unsigned page_size = PAGE_SZ;
-  const char *cur = (const char *) str;
-  const char *prev_page = (const char *)((uintptr_t) str & ~(page_size - 1));
-
-  while (true)
-  {
-    if ((!is_user_vaddr (cur)) || (NULL == pagedir_get_page (thread_current ()->pagedir, cur)))
-      syscall_exit (ERROR);
-
-    if ('\0' == *cur)
-      break;
-
-    cur++;
-
-    void *cur_page = (void *)((uintptr_t)cur & ~(page_size - 1));
-    if (prev_page != cur_page)
-    {
-      if ((!is_user_vaddr (cur)) || (NULL == pagedir_get_page (thread_current ()->pagedir, cur)))
-        syscall_exit (ERROR);
-
-      prev_page = cur_page;
-    }
-  }
-}
-
-/* validate_buffer:
- * @brief - similar to valdate_string, this function checks if buffer is valid via its
- *          virtual page address, and determined if its size does not leak into 
- *          unauthorized space.
- * @param (const void *) buf - a pointer to the buffer that requires validation.
- * @param (unsigned) size - the size of the buffer being checked. 
- * @return (void) - N/A
- */
-void validate_buffer (const void *buf, unsigned size)
-{
-  unsigned page_size = PAGE_SZ;
-  const char *buffer_end = (const char *)buf + size;
-
-  for (const char *cur = buf; cur < buffer_end; )
-  {
-    validate_ptr (cur);
-    unsigned distance_to_page_end = page_size - ((uintptr_t) cur & (page_size - 1));
-    cur += MIN(distance_to_page_end, (unsigned)(buffer_end - cur));
-  }
-}
-
-/* translate_vaddr:
- * @brief - get the pointer to page and translate the virutal address to its physical address.
- * @param (const void *) vaddr - a pointer to the specific virtual address.
- * @return (int) - returns an integer representation of the associated physical address, or 
- *                 ERROR (-1) on failure.
- */
-int translate_vaddr (const void *vaddr)
-{
-  if (!is_user_vaddr (vaddr))
-    syscall_exit (ERROR);
-
-  void *ptr = pagedir_get_page (thread_current ()->pagedir, vaddr);
-  if (!ptr)
-  {
-    syscall_exit (ERROR);
-  }
-  return (int) ptr;
-}
-
-/* child_process_find:
- * @brief - find a child process based on a specific pid from the child process list struct.
- * @param (int) pid - the pid of the specific child process to be found.
- * @return (struct child_process *) - on success returns a pointer to the child process struct
- *                                    associated with the specific PID, if not found, returns NULL.
- */
-struct child_process *child_process_find (int pid)
+static struct openfile *
+file_get (int fd)
 {
   struct thread *t = thread_current ();
   struct list_elem *e;
-  struct list_elem *next;
-  
-  for (e = list_begin (&t->child_list); list_end (&t->child_list) != e; e = next)
-  {
-    next = list_next (e);
-    struct child_process *child = list_entry (e, struct child_process, elem);
-    if (pid == child->pid)
+  for (e = list_begin (&t->executables); e != list_end (&t->executables);
+       e = list_next (e))
     {
-      return child;
+      struct openfile *of = list_entry (e, struct openfile, elem);
+      if(of->fd == fd)
+        return of;
     }
-  }
+    
   return NULL;
-}
-
-/* child_process_remove:
- * @brief - removes a specific child process based upon the child struct passed.
- * @param (struct child_process *) child - a pointer to the specific child process to remove.
- * @return (void) - N/A
- */
-void child_process_remove  (struct child_process *child)
-{
-  thread_lock_release ();
-  list_remove (&child->elem);
-  free (child);
-}
-
-/* child_process_remove_all:
- * @brief - remove all child processes from a thread containing the parent process.
- * @param (void) - N/A
- * @return (void) - N/A
- */
-void child_process_remove_all (void) 
-{
-  struct thread *t = thread_current ();
-  struct list_elem *next;
-  struct list_elem *e = list_begin (&t->child_list);
-  
-  while (list_end (&t->child_list) != e)
-  {
-    next = list_next (e);
-    struct child_process *child = list_entry (e, struct child_process, elem);
-    if (NULL == child)
-      return;
-
-    child_process_remove (child);
-    e = next;
-  }
-}
-
-/* file_add:
- * @brief - add file to file list and return file descriptor of added file.
- * @param (struct file *) file_name - a pointer to the file struct (file.h) containing
- *                                    the name of the specific file.
- * @return (int) - on success, returns the file descriptor of the newly created
- *                 file, or ERROR (-1) on failure.
- */
-int file_add (struct file *file_name)
-{
-  struct process_file *process_file_ptr = malloc (sizeof (struct process_file));
-  if (!process_file_ptr)
-  {
-    file_close (file_name);
-    return ERROR;
-  }
-  process_file_ptr->file  = file_name;
-  process_file_ptr->fd    = thread_current ()->fd;
-  thread_current ()->fd++;
-  list_push_back (&thread_current ()->file_list, &process_file_ptr->elem);
-  return process_file_ptr->fd;
-  
-}
-
-/* file_get:
- * @brief - get file that matches the specific file descriptor passed.
- * @param (int) fd - the file descriptor of the specific file to locate.
- * @return (struct file *) - returns a pointer to the specific file struct
- *                           (file.h) of the associated file descriptor.
- */
-struct file *file_get (int fd)
-{
-  struct thread *t = thread_current ();
-  struct list_elem* next;
-  struct list_elem* e = list_begin (&t->file_list);
-  if (NULL == e)
-  {
-    process_file_close (fd);
-    return NULL;
-  }
-  
-  while (list_end (&t->file_list) != e)
-  {
-    struct process_file *process_file_ptr = list_entry (e, struct process_file, elem);
-    next = list_next (e); // Prepare 'next' for the next iteration
-
-    if (process_file_ptr == NULL)
-    {
-        file_close(process_file_ptr->file);
-        return NULL;
-    }
-
-    if (fd == process_file_ptr->fd)
-        return process_file_ptr->file;
-
-    e = next;
-  }
-
-  /* return NULL if process file not found */
-  return NULL;
-}
-
-/* process_file_close:
- * @brief - close the desired file descriptor of the process file (syscall.h).
- * @param (int) fd - the file descriptor of the specified file to close.
- * @return (void) - N/A
- */
-void process_file_close (int fd)
-{
-  struct thread *t = thread_current ();
-  struct list_elem *next;
-  struct list_elem *e = list_begin (&t->file_list);
-  
-  while (list_end (&t->file_list) != e)
-  {
-    next = list_next (e);
-    struct process_file *process_file_ptr = list_entry (e, struct process_file, elem);
-    if (NULL == process_file_ptr)
-      /* list_entry does not find process_file */
-      return;
-
-    if ((fd == process_file_ptr->fd) || (FD_CLOSE_ALL == fd))
-    {
-      file_close (process_file_ptr->file);
-      list_remove (&process_file_ptr->elem);
-      free (process_file_ptr);
-
-      if (FD_CLOSE_ALL != fd)
-        return;
-    }
-
-    e = next;
-  }
 }

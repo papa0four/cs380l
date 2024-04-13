@@ -1,83 +1,68 @@
 #include "vm/swap.h"
-#include <bitmap.h>
-#include <debug.h>
 #include <stdio.h>
+#include <stdint.h>
+#include <bitmap.h>
+#include "devices/block.h"
 #include "vm/frame.h"
-#include "vm/page.h"
-#include "threads/synch.h"
 #include "threads/vaddr.h"
+#include "threads/malloc.h"
+#include "threads/palloc.h"
+#include "threads/synch.h"
 
-static struct block *swap_device;
+static struct bitmap *used_blocks;
+struct block *swap_table;
+static struct lock block_lock;
 
-static struct bitmap *swap_bitmap;
-
-static struct lock swap_lock;
-
-#define NUM_SECTORS (PGSIZE / BLOCK_SECTOR_SIZE)
-
-void swap_init (void)
+void
+swap_init (void)
 {
-    swap_device = block_get_role (BLOCK_SWAP);
-
-    if (NULL == swap_device)
-        swap_bitmap = bitmap_create (0);
-    else
-        swap_bitmap = bitmap_create ((block_size (swap_device) / NUM_SECTORS));
-
-    if (NULL == swap_bitmap)
-        return;
-    
-    lock_init (&swap_lock);
+  used_blocks = bitmap_create(BLOCK_BITMAP_SIZE);
+  swap_table = block_get_role(BLOCK_SWAP);
+  lock_init (&block_lock);
 }
 
-void swap_in (struct spt_entry *p)
+/* Block sector size is 512 bytes => 8 sectors = 1 page */
+
+/* Insert the contents of a page into the swap table */
+void
+swap_in (struct spt_entry *p)
 {
-    ASSERT (NULL != p);
-    ASSERT (NULL != p->frame);
-    ASSERT (BLOCK_SECTOR_NONE != p->swap_index);
-    ASSERT (lock_held_by_current_thread (&p->frame->frame_lock));
+  lock_acquire (&block_lock);
+  char *byte = (char *) p->frame->kpage;
+  size_t sector_num = bitmap_scan_and_flip (used_blocks, 0, 1, false);
+  p->sector = sector_num;
 
-    for (size_t i = 0; i < NUM_SECTORS; i++)
-        block_read (
-            swap_device,
-            (p->swap_index + i),
-            (void *)((char *) p->frame->base_vaddr + i * BLOCK_SECTOR_SIZE)
-        );
-    
-    bitmap_reset (
-        swap_bitmap,
-        ((size_t) p->swap_index / NUM_SECTORS)
-        );
-
-    p->swap_index = BLOCK_SECTOR_NONE;
+  
+  for (int i = 0; i < MAX_SECTORS; i++)
+  {
+    block_write (swap_table, sector_num * MAX_SECTORS + i, byte);
+    byte += BLOCK_SECTOR_SIZE;
+  }
+  lock_release (&block_lock);
 }
 
-bool swap_out (struct spt_entry *p)
+/* Read from swap into the page */
+void
+swap_out (struct spt_entry *p)
 {
-    ASSERT (NULL != p);
-    ASSERT (NULL != p->frame);
-    ASSERT (lock_held_by_current_thread (&p->frame->frame_lock));
+  lock_acquire (&block_lock);
+  char *byte = (char *) p->frame->kpage;
+  unsigned read_sector = p->sector;
 
-    lock_acquire (&swap_lock);
-    size_t slot = bitmap_scan_and_flip (swap_bitmap, 0, 1, false);
-    lock_release (&swap_lock);
+  for (int i = 0; i < MAX_SECTORS; i++)
+  {
+    block_read (swap_table, read_sector * MAX_SECTORS + i, byte);
+    byte += BLOCK_SECTOR_SIZE;
+  }
 
-    if (BITMAP_ERROR == slot)
-        return false;
+  bitmap_reset (used_blocks, read_sector);
+  lock_release (&block_lock);  
+}
 
-    p->swap_index = (slot * NUM_SECTORS);
-
-    for (size_t i = 0; i < NUM_SECTORS; i++)
-        block_write (
-            swap_device,
-            ((size_t) p->swap_index + i),
-            (void*)((char *) p->frame->base_vaddr + i * BLOCK_SECTOR_SIZE)
-        );
-
-    p->private      = false;
-    p->file         = NULL;
-    p->file_offset  = 0;
-    p->file_bytes   = 0;
-
-    return true;
+void
+swap_free (struct spt_entry *p)
+{
+  lock_acquire (&block_lock);
+  bitmap_reset (used_blocks, p->sector);
+  lock_release (&block_lock);
 }

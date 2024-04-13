@@ -1,211 +1,96 @@
 #include "vm/frame.h"
-#include "frame.h"
-#include "vm/page.h"
 #include <stdio.h>
-#include <limits.h>
-#include "devices/timer.h"
-#include "threads/init.h"
+#include <bitmap.h>
+#include <round.h>
+#include "vm/page.h"
+#include "vm/swap.h"
+#include "userprog/pagedir.h"
+#include "threads/thread.h"
+#include "threads/vaddr.h"
 #include "threads/malloc.h"
 #include "threads/palloc.h"
 #include "threads/synch.h"
-#include "threads/vaddr.h"
-#include "userprog/pagedir.h"
 
-static struct frame_table ft;
 
-void frame_table_init (void)
+static struct bitmap *frames_available;
+static struct frame_entry *frame_table;
+static unsigned frame_idx;
+static unsigned max_idx;
+
+static struct lock frame_lock;
+
+void
+frame_init (size_t user_pages)
 {
-    void *vaddr_base = NULL;
+  unsigned i;
 
-    /* Initialize the frame table's members */
-    lock_init (&ft.table_lock);
-    cond_init (&ft.frame_cond);
-    /* allocate the frames array using init_ram_pages (threads/loader.h) */
-    ft.frames = malloc (sizeof (struct frame) * init_ram_pages);
-    ft.frame_cnt = 0;
+  /* Same thing for calculating pages in init_pool from palloc.c */
+  size_t bm_pages = DIV_ROUND_UP (bitmap_buf_size (user_pages), PGSIZE);
+  if (bm_pages > user_pages)
+    bm_pages = user_pages;
+  user_pages -= bm_pages;
 
-    if (NULL == ft.frames)
-        return;
+  frame_idx = 0;
+  max_idx = (unsigned) user_pages;
 
-    while ((NULL != (vaddr_base = palloc_get_page (PAL_USER))) && (init_ram_pages > ft.frame_cnt))
+  /* The frame table contains one entry for each frame that contains a user page */
+  frame_table = (struct frame_entry*)malloc(sizeof(struct frame_entry)*user_pages);
+  frames_available = bitmap_create(user_pages);
+
+  for(i = 0; i < user_pages; i++) {
+    frame_table[i].frame_id = i;
+    frame_table[i].page = NULL;
+  }
+
+  lock_init (&frame_lock);
+}
+
+struct frame_entry *
+frame_get_multiple (size_t page_cnt)
+{
+  size_t fnum = bitmap_scan_and_flip (frames_available, 0, page_cnt, false);
+  if (BITMAP_ERROR != fnum)
+  {
+    frame_table[fnum].kpage = palloc_get_page(PAL_USER | PAL_ASSERT | PAL_ZERO);
+    return &frame_table[fnum];
+  }
+  else {
+    /* Evict frame */
+    struct thread *t = thread_current ();
+    while (pagedir_is_accessed (t->pagedir, frame_table[frame_idx].page->addr))
     {
-        struct frame *f = &ft.frames[ft.frame_cnt++];
-        lock_init (&f->frame_lock);
-        f->base_vaddr = vaddr_base;
-        f->page = NULL;
+      pagedir_set_accessed (t->pagedir, frame_table[frame_idx].page->addr, false);
+      frame_idx++;
+      if(frame_idx >= max_idx)
+        frame_idx = 0;
     }
+    /* Swap frames */
+    swap_in (frame_table[frame_idx].page);
+    frame_table[frame_idx].page->frame = NULL;
+    frame_table[frame_idx].page->status = SWAP_MAPPED;
+    pagedir_clear_page (frame_table[frame_idx].page->pagedir, frame_table[frame_idx].page->addr);
+    
+    unsigned prev_idx = frame_idx;
+    frame_idx++;
+    if(frame_idx >= max_idx)
+        frame_idx = 0;
+
+    return &frame_table[prev_idx];
+  }
 }
 
-static struct frame *eviction_check (struct frame *f)
+struct frame_entry *
+frame_get (void)
 {
-    if (f)
-    {
-        /* Ensure frame is not locked or in use */
-        if (!lock_try_acquire (&f->frame_lock))
-        {
-            /* Current frame is in use and cannot be evicted */
-            lock_release (&ft.table_lock);
-            return NULL;
-        }
-
-        /* Determine if page can be evicted, i.e. dirty page */
-        if (f->page)
-        {
-            void *vaddr = f->page->vaddr;
-            if (pagedir_is_dirty (thread_current ()->pagedir, vaddr))
-            {
-                if (!spt_page_out (f->page))
-                {
-                    /* Failed to write page to disk or swap */
-                    lock_release (&f->frame_lock);
-                    lock_release (&ft.table_lock);
-                    return NULL;
-                }
-            }
-        }
-
-        /* Page has been successfull evicted, or no page existed. */
-        f->page = NULL;
-        lock_release (&ft.table_lock);
-
-        /* Return available frame with frame_lock still acquired for safe use. */
-        return f;
-    }
-
-    lock_release (&ft.table_lock);
-    return NULL;
+  return frame_get_multiple (1);
 }
 
-static struct frame *frame_find_available (void)
+/* Free given frame occupied by terminating process */
+void
+frame_free (struct frame_entry *f)
 {
-    lock_acquire (&ft.table_lock);
-
-    struct frame *evict_candidate = NULL;
-    /* Set the starting point greater than or equal to any actual last_access value. */
-    unsigned max_access_time = UINT_MAX;
-
-    for (size_t i = 0; i < ft.frame_cnt; i++)
-    {
-        struct frame *f = &ft.frames[i];
-        if (NULL == f->page)
-        {
-            lock_release (&ft.table_lock);
-            return f; // frame found
-        }
-
-        /* Look for least recently used page */
-        if (max_access_time > f->last_accessed)
-        {
-            evict_candidate = f;
-            max_access_time = f->last_accessed;
-        }
-    }
-
-    evict_candidate = eviction_check (evict_candidate);
-    return evict_candidate; // if found returns free'd frame, else NULL    
-}
-
-static struct frame *try_frame_alloc (struct spt_entry *page)
-{
-    struct frame *f = frame_find_available();
-    if (NULL == f)
-        return NULL;
-
-    f->page = page;
-    return f;
-}
-
-static bool is_frame_available (void)
-{
-    // lock_acquire (&ft.table_lock);
-    for (size_t i = 0; i < ft.frame_cnt; i++)
-    {
-        if (NULL == ft.frames[i].page)
-        {
-            // lock_release (&ft.table_lock);
-            /* free frame found */
-            return true;
-        }
-    }
-    // lock_release (&ft.table_lock);
-    /* No free frames found */
-    return false;
-}
-
-static bool wait_for_frame (struct condition *frame_cond, int64_t timeout_ms)
-{
-    struct lock wait_lock;
-    lock_init (&wait_lock);
-    lock_acquire (&wait_lock);
-
-    /* milliseconds to ticks conversion */
-    int64_t start = timer_ticks ();
-    int64_t end = start + MS_TO_TICKS (timeout_ms);
-
-    while ((!is_frame_available ()) && (timer_ticks () < end))
-        cond_wait (frame_cond, &wait_lock);
-
-    bool succeeded = is_frame_available ();
-    lock_release (&wait_lock);
-    return succeeded;
-}
-
-struct frame *frame_allocate (struct spt_entry *page)
-{
-    ASSERT (NULL != page);
-    struct frame *f = try_frame_alloc (page);
-    if (f)
-    {
-        ASSERT (lock_held_by_current_thread (&f->frame_lock));
-        return f;
-    }
-
-    /* Wait for a notification that a frame has become available */
-    for (size_t try = 0; try < MAX_RETRIES; try++)
-    {
-        if (wait_for_frame (&ft.frame_cond, TIMEOUT_MS))
-        {
-            f = try_frame_alloc (page);
-            if (f)
-            {
-                ASSERT (lock_held_by_current_thread (&f->frame_lock));
-                return f;
-            }
-            else
-                /* Break early if timeout reached with no available frame. */
-                break;
-        }
-    }
-
-    /* return null if no frame is created */
-    return NULL;
-}
-
-void frame_lock (struct spt_entry *page)
-{
-    ASSERT (NULL != page);
-    struct frame *f = page->frame;
-    if (f)
-    {
-        lock_acquire (&f->frame_lock);
-        if (page->frame != f)
-        {
-            lock_release (&f->frame_lock);
-            ASSERT (NULL == page->frame);
-        }
-    }
-}
-
-void frame_release (struct frame *frame)
-{
-    ASSERT (lock_held_by_current_thread (&frame->frame_lock));
-    frame->page = NULL;
-    cond_signal (&ft.frame_cond, &ft.table_lock);
-    lock_release (&frame->frame_lock);
-}
-
-void frame_unlock (struct frame *frame)
-{
-    ASSERT (lock_held_by_current_thread (&frame->frame_lock));
-    lock_release (&frame->frame_lock);
+  pagedir_clear_page (f->page->pagedir, f->page->addr);
+  bitmap_reset (frames_available, f->frame_id);
+  palloc_free_page (frame_table[f->frame_id].kpage);
+  f->page = NULL;
 }

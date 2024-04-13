@@ -8,13 +8,13 @@
 #include "threads/interrupt.h"
 #include "threads/intr-stubs.h"
 #include "threads/palloc.h"
+#include "threads/malloc.h"
 #include "threads/switch.h"
 #include "threads/synch.h"
 #include "threads/vaddr.h"
-#include "threads/malloc.h"
 #ifdef USERPROG
 #include "userprog/process.h"
-#include "userprog/syscall.h"
+#include "vm/page.h"
 #endif
 
 /* Random value for struct thread's `magic' member.
@@ -208,12 +208,6 @@ thread_create (const char *name, int priority,
 
   intr_set_level (old_level);
 
-	/* User Implementation */
-  t->parent = thread_tid ();
-  struct child_process *child = child_process_insert (t->tid);
-  t->child = child;
-  /* End User Implementation */
-
   /* Add to run queue. */
   thread_unblock (t);
 
@@ -225,7 +219,8 @@ thread_create (const char *name, int priority,
 
    This function must be called with interrupts turned off.  It
    is usually a better idea to use one of the synchronization
-   primitives in synch.h. */
+   primitives in synch.h. (For this class, you MUST use one of the
+   synchronization primitives instead.) */
 void
 thread_block (void) 
 {
@@ -306,12 +301,7 @@ thread_exit (void)
      and schedule another process.  That process will destroy us
      when it calls thread_schedule_tail(). */
   intr_disable ();
-
-  /* User implemented - release lock held by thread */
-  thread_lock_release ();
-  /* End user implementation - lock released */
-
-  list_remove (&thread_current ()->allelem);
+  list_remove (&thread_current()->allelem);
   thread_current ()->status = THREAD_DYING;
   schedule ();
   NOT_REACHED ();
@@ -350,6 +340,21 @@ thread_foreach (thread_action_func *func, void *aux)
       struct thread *t = list_entry (e, struct thread, allelem);
       func (t, aux);
     }
+}
+
+struct thread *
+get_thread_by_tid (tid_t tid)
+{
+  struct list_elem *e;
+
+  for (e = list_begin (&all_list); e != list_end (&all_list);
+       e = list_next (e))
+    {
+      struct thread *t = list_entry (e, struct thread, allelem);
+      if (t->tid == tid)
+        return t;
+    }
+  return NULL;
 }
 
 /* Sets the current thread's priority to NEW_PRIORITY. */
@@ -476,25 +481,27 @@ init_thread (struct thread *t, const char *name, int priority)
   ASSERT (PRI_MIN <= priority && priority <= PRI_MAX);
   ASSERT (name != NULL);
 
+  /* Supplemental page table initialized in process.c because
+     hash_init calls thread_current, which does not work at
+     this point in PintOS */
+
   memset (t, 0, sizeof *t);
   t->status = THREAD_BLOCKED;
   strlcpy (t->name, name, sizeof t->name);
   t->stack = (uint8_t *) t + PGSIZE;
   t->priority = priority;
+  list_init (&t->executables);
+  list_init (&t->children);
+  t->next_fd = 2;
+  t->command = NULL;
+  sema_init (&t->load_sema, 0);
+  sema_init (&t->wait_sema, 0);
+  sema_init (&t->exit_sema, 0);
+  t->exit_status = -1;
+  t->load_success = 1;
+  t->page_cnt = 0;
   t->magic = THREAD_MAGIC;
   list_push_back (&all_list, &t->allelem);
-
-  /* User implemented for file and child */
-	list_init(&t->file_list);
-  list_init(&t->child_list);
-  list_init(&t->lock_list);
-  lock_init(&t->child_list_lock);
-
-  t->child      = NULL;     // initialize CHILD to NULL
-  t->executable = NULL;     // initialize file pointer to NULL
-  t->parent     = -1;       // no parent exists at initialization
-  t->fd         = 2;        // minimum file descriptor is 2 (0 = IN/1 = OUT)
-  /* End user implementation*/
 }
 
 /* Allocates a SIZE-byte frame at the top of thread T's stack and
@@ -610,63 +617,3 @@ allocate_tid (void)
 /* Offset of `stack' member within `struct thread'.
    Used by switch.S, which can't figure it out on its own. */
 uint32_t thread_stack_ofs = offsetof (struct thread, stack);
-
-/* thrad_alive:
- * @brief - traverse through every list of threads and check if thread with 
- *          the desired pid is alive.
- * @param (int) pid - the pid of the thread desired to check for status.
- * @return (int) - on success, returns a 1 (true) if the thread pid matches, or
- *                 returns 0 (false) if no match is found.
- */
-int thread_alive (int pid){
-  struct list_elem *e = NULL;
-  for (e = list_begin(&all_list); e != list_end(&all_list); e = list_next (e))
-  {
-    struct thread *t = list_entry (e, struct thread, allelem);
-    if (pid == t->tid)
-    {
-      // pid matches return true
-      return 1;
-    }
-  }
-  return 0; // no tid matches then thread is no longer alive
-}
-
-/* child_process_insert:
- * @brief - add a new child process to the thread's child list member.
- * @param (int) pid - the pid of the newly created child process.
- * @return (struct child_process *) - returns a pointer to the newly created
- *                                    child process.
- */
-struct child_process* child_process_insert (int pid)
-{
-  struct child_process *child = malloc(sizeof(struct child_process));
-  child->pid = pid;
-  child->load_status = NOT_LOADED;
-  child->wait = 0; // false
-  child->exit = 0; // false
-  sema_init(&child->load_sema, 0);
-  sema_init(&child->exit_sema, 0);
-  list_push_back(&thread_current ()->child_list, &child->elem);
-  
-  return child;
-}
-
-/* thread_lock_release:
- * @brief - releases all the locks thread holds within the lock list.
- * @param (void) - N/A
- * @return (void) - N/A
- */
-void
-thread_lock_release (void)
-{
-  struct thread     *t    = thread_current();
-  struct list_elem  *e    = NULL;
-  
-  for (e = list_begin(&t->lock_list); e != list_end(&t->lock_list); e = list_next (e))
-  {
-    struct lock *lock_ptr = list_entry (e, struct lock, elem);
-    lock_release (lock_ptr);
-    list_remove (&lock_ptr->elem);
-  }
-}
