@@ -181,9 +181,7 @@ process_exit (void)
   for (e = list_begin (&cur->children); e != list_end (&cur->children);
        e = list_next (e))
   {
-    lock_acquire (&filesys_lock);
     child = list_entry (e, struct thread, child_elem);
-    lock_release (&filesys_lock);
     sema_down (&child->wait_sema);
     sema_up (&child->exit_sema);
   }
