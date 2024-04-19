@@ -5,7 +5,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "process.h"
 #include "userprog/gdt.h"
 #include "userprog/pagedir.h"
 #include "userprog/tss.h"
@@ -523,11 +522,6 @@ setup_stack (void **esp, char **saveptr, const char *filename)
   {
     success = install_page (((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true);
     *esp = PHYS_BASE; // Adjust stack pointer for initial offset
-
-    /* initialize stack bottom and esp for current thread */
-    struct thread *t = thread_current ();
-    t->stack_bottom = (void *) ((uint8_t *) PHYS_BASE - MAX_STACK_SZ);
-    t->esp = *esp;
   }
   else
   {
@@ -561,7 +555,7 @@ setup_stack (void **esp, char **saveptr, const char *filename)
   }
 
   // Word-align the stack
-  *esp = (void *) ((unsigned int) (*esp) & 0xfffffffc);
+  *esp = (char *) *esp - ((uintptr_t) *esp % 4);
 
   // Push NULL sentinel
   *esp = (char *) *esp - sizeof (char *);
@@ -609,57 +603,4 @@ install_page (void *upage, void *kpage, bool writable)
      address, then map our page there. */
   return (pagedir_get_page (t->pagedir, upage) == NULL
           && pagedir_set_page (t->pagedir, upage, kpage, writable));
-}
-
-/* User implemented for stack expansion */
-/* User implemented for stack expansion */
-bool is_stack_access (void *esp, void *addr)
-{
-    struct thread *cur = thread_current();
-    void *stack_bottom = cur->stack_bottom;
-
-    char *adjusted_esp = (char *)esp;
-    char *adjusted_addr = (char *)addr;
-
-    // Check if the address is within range below ESP to allow for PUSH operations,
-    // and within the stack limits (between stack_bottom and PHYS_BASE).
-    bool within_stack_growth_zone = adjusted_addr >= adjusted_esp - 32 && adjusted_addr < (char *)PHYS_BASE;
-    bool within_stack_bounds = adjusted_addr >= (char *)stack_bottom && adjusted_addr < (char *)PHYS_BASE;
-
-    return within_stack_growth_zone && within_stack_bounds;
-}
-
-
-bool expand_stack(void **esp, void *addr)
-{
-  if ((!esp) || (!addr))
-    return false; // invalid parameters
-
-  /* Check is address is within reasonable range below esp. */
-  if (((uintptr_t) *esp - (uintptr_t) addr) > STACK_THRESHOLD)
-    return false; // address is too far from current esp for proper stack growth
-
-  if ((uintptr_t) PHYS_BASE - ((uintptr_t) addr > MAX_STACK_SZ))
-    return false; // exceeds stack size limit
-
-  /* calculate page address where fault occurred */
-  void *fault_page = (void *)((uintptr_t) addr & ~(PGSIZE - 1));
-
-  /* allocate new page for stack */
-  uint8_t *kpage = palloc_get_page (PAL_USER | PAL_ZERO);
-  if (NULL == kpage)
-    return false; // failed to allocate page
-
-  if (!install_page (fault_page, kpage, true))
-  {
-    palloc_free_page (kpage);
-    return false; // failed to map page to user space
-  }
-
-  /* Update the current thread's stack bottom. */
-  struct thread *t = thread_current ();
-  if ((uintptr_t) addr < (uintptr_t) t->stack_bottom)
-    t->stack_bottom = (void *)((uintptr_t) addr & ~(PGSIZE - 1));
-
-  return true;
 }
