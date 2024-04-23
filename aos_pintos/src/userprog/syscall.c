@@ -15,6 +15,14 @@
 #include "devices/input.h"
 #include "vm/page.h"
 
+<<<<<<< HEAD
+=======
+#define ARG1      1
+#define ARG2      2
+#define ARG3      3
+#define MAX_ARGS  3
+#define WORD_SZ   4
+>>>>>>> f9b93c36c52a54dfbfcce5d528f35e7454d9c996
 
 #define BUF_MAX 200
 
@@ -59,6 +67,7 @@ valid_mem_access (const void *up)
 static void
 syscall_handler (struct intr_frame *f UNUSED) 
 {
+<<<<<<< HEAD
   void *esp = f->esp;
   uint32_t *eax = &f->eax;
 
@@ -66,6 +75,10 @@ syscall_handler (struct intr_frame *f UNUSED)
     userprog_exit (-1);
   if(!valid_mem_access ( ((int *) esp) + 1))
     userprog_exit (-1);
+=======
+  int argv[MAX_ARGS] = { 0 };
+  int esp = translate_vaddr ((const void *) f->esp);
+>>>>>>> f9b93c36c52a54dfbfcce5d528f35e7454d9c996
 
   char *target    = NULL;
   char *linkpath  = NULL;
@@ -302,6 +315,7 @@ userprog_read (int fd, void *buffer, unsigned size)
     userprog_exit (-1);
   }
 
+<<<<<<< HEAD
   // bufChar = (char *)buffer;
 	if(0 == fd)
   {
@@ -324,6 +338,34 @@ userprog_read (int fd, void *buffer, unsigned size)
     
     bytes_read = file_read (of->file, buffer, size);
     lock_release (&filesys_lock);
+=======
+/* valdiate_str:
+ * @brief - this function is meant to check if string is valid via its page address.
+ * @param (const void *) str - a pointer to the string that requires validation.
+ * @return (void) - N/A
+ */
+void validate_str (const void *str)
+{
+    while (0 != *(char *) translate_vaddr (str))
+      str = (char *) str + 1;
+}
+
+/* validate_buffer:
+ * @brief - similar to valdate_string, this function checks if buffer is valid via its
+ *          virtual page address, and determined if its size does not leak into 
+ *          unauthorized space.
+ * @param (const void *) buf - a pointer to the buffer that requires validation.
+ * @param (unsigned) size - the size of the buffer being checked. */
+void validate_buffer (const void *buf, unsigned size)
+{
+  unsigned i = 0;
+  char* buffer_copy = (char *) buf;
+  while (i < size)
+  {
+    validate_ptr ((const void *) buffer_copy);
+    buffer_copy++;
+    i++;
+>>>>>>> f9b93c36c52a54dfbfcce5d528f35e7454d9c996
   }
 
   return bytes_read;

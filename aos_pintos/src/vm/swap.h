@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 #ifndef VM_SWAP_H
 #define VM_SWAP_H
 
@@ -13,3 +14,5 @@ void swap_out (struct spt_entry *);
 void swap_free (struct spt_entry *);
 
 #endif /* vm/swap.h */
+=======
+>>>>>>> f9b93c36c52a54dfbfcce5d528f35e7454d9c996

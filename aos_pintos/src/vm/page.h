@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 #ifndef VM_PAGE_H
 #define VM_PAGE_H
 
@@ -46,3 +47,5 @@ void page_destructor (struct hash_elem *, void *);
 struct spt_entry *page_lookup (void *);
 
 #endif /* vm/page.h */
+=======
+>>>>>>> f9b93c36c52a54dfbfcce5d528f35e7454d9c996

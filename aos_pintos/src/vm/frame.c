@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 #include "vm/frame.h"
 #include <stdio.h>
 #include <bitmap.h>
@@ -94,3 +95,5 @@ frame_free (struct frame_entry *f)
   palloc_free_page (frame_table[f->frame_id].kpage);
   f->page = NULL;
 }
+=======
+>>>>>>> f9b93c36c52a54dfbfcce5d528f35e7454d9c996

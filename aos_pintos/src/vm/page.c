@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 #include "vm/page.h"
 #include <stdio.h>
 #include <stdint.h>
@@ -56,3 +57,5 @@ page_lookup (void *address)
   e = hash_find (&t->pages, &p.hash_elem);
   return e != NULL ? hash_entry (e, struct spt_entry, hash_elem) : NULL;
 }
+=======
+>>>>>>> f9b93c36c52a54dfbfcce5d528f35e7454d9c996

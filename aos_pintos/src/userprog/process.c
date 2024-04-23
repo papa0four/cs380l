@@ -540,6 +540,7 @@ setup_stack (void **esp, const char *file_name)
   struct thread *t = thread_current ();
   uint8_t *kpage;
   bool success = false;
+<<<<<<< HEAD
 
   char *token;
   char *save_ptr;
@@ -557,6 +558,29 @@ setup_stack (void **esp, const char *file_name)
 
   for (token = strtok_r (fn_copy, " ", &save_ptr); token != NULL;
         token = strtok_r (NULL, " ", &save_ptr))
+=======
+  
+  kpage = palloc_get_page (PAL_USER | PAL_ZERO);
+  if (NULL != kpage)
+  {
+    success = install_page (((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true);
+    *esp = PHYS_BASE; // Adjust stack pointer for initial offset
+  }
+  else
+  {
+    palloc_free_page(kpage);
+    return false;
+  }
+  
+  char *token     = NULL;
+  int   argc      = 0;
+  int   idx       = 0;
+  int   arg_size  = DEFAULT_ARGV; // Initial size for argument array
+  char  **args    = malloc (arg_size * sizeof (char*));
+
+  // Tokenize filename and arguments
+  for (token = (char *) filename; token != NULL; token = strtok_r(NULL, " ", saveptr))
+>>>>>>> f9b93c36c52a54dfbfcce5d528f35e7454d9c996
   {
     if(0 == i)
     {
@@ -606,6 +630,7 @@ setup_stack (void **esp, const char *file_name)
         tokens[j - 1] = esp_char;
       }
 
+<<<<<<< HEAD
       /* word_align */
       len_token = WORDSZ - (len_token % WORDSZ);
       for (j = 0; j < len_token; j++)
@@ -613,6 +638,10 @@ setup_stack (void **esp, const char *file_name)
         esp_char--;
         *esp_char = word_align;
       }
+=======
+  // Word-align the stack
+  *esp = (char *) *esp - ((uintptr_t) *esp % 4);
+>>>>>>> f9b93c36c52a54dfbfcce5d528f35e7454d9c996
 
       /* add zero char pointer */
       esp_char -= WORDSZ;
@@ -666,6 +695,11 @@ install_page (void *upage, void *kpage, bool writable)
 
   /* Verify that there's not already a page at that virtual
      address, then map our page there. */
+<<<<<<< HEAD
   return ((NULL == pagedir_get_page (t->pagedir, upage)) &&
           (pagedir_set_page (t->pagedir, upage, kpage, writable)));
+=======
+  return (pagedir_get_page (t->pagedir, upage) == NULL
+          && pagedir_set_page (t->pagedir, upage, kpage, writable));
+>>>>>>> f9b93c36c52a54dfbfcce5d528f35e7454d9c996
 }

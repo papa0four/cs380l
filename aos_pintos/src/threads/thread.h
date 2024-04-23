@@ -93,6 +93,7 @@ struct openfile {
    blocked state is on a semaphore wait list. */
 struct thread
   {
+<<<<<<< HEAD
     /* Owned by thread.c. */
     tid_t tid;                          /* Thread identifier. */
     enum thread_status status;          /* Thread state. */
@@ -128,6 +129,37 @@ struct thread
     /* Owned by thread.c. */
     unsigned magic;                     /* Detects stack overflow. */
   };
+=======
+      /* Owned by thread.c. */
+      tid_t tid;                          /* Thread identifier. */
+      enum thread_status status;          /* Thread state. */
+      char name[16];                      /* Name (for debugging purposes). */
+      uint8_t *stack;                     /* Saved stack pointer. */
+      int priority;                       /* Priority. */
+      struct list_elem allelem;           /* List element for all threads list. */
+
+      /* Shared between thread.c and synch.c. */
+      struct list_elem elem;              /* List element. */
+
+   #ifdef USERPROG
+      /* Owned by userprog/process.c. */
+      uint32_t *pagedir;                  /* Page directory. */
+   #endif
+
+      /* Shared between syscall/process.c */
+      struct list             file_list;        /* list of process files */
+      struct list             child_list;       /* list of child processes */
+      struct list             lock_list;        /* used to keep track of locks the thread holds */
+      struct lock             child_list_lock;  /* lock held in the lock list */
+      struct child_process    *child;           /* point to child process */
+      struct file             *executable;      /* use for denying writes to executables */
+      int                     fd;               /* file descriptor */
+      tid_t                   parent;           /* id of the parent thread */
+
+      /* Owned by thread.c. */
+      unsigned magic;                     /* Detects stack overflow. */
+   };
+>>>>>>> f9b93c36c52a54dfbfcce5d528f35e7454d9c996
 
 /* If false (default), use round-robin scheduler.
    If true, use multi-level feedback queue scheduler.

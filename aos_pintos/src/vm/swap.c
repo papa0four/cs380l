@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 #include "vm/swap.h"
 #include <stdio.h>
 #include <stdint.h>
@@ -66,3 +67,5 @@ swap_free (struct spt_entry *p)
   bitmap_reset (used_blocks, p->sector);
   lock_release (&block_lock);
 }
+=======
+>>>>>>> f9b93c36c52a54dfbfcce5d528f35e7454d9c996

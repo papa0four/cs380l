@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 #ifndef VM_FRAME_H
 #define VM_FRAME_H
 
@@ -17,3 +18,5 @@ struct frame_entry *frame_get_multiple (size_t);
 void frame_free (struct frame_entry *);
 
 #endif /* vm/frame.h */
+=======
+>>>>>>> f9b93c36c52a54dfbfcce5d528f35e7454d9c996

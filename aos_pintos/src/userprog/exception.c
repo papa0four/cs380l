@@ -1,6 +1,7 @@
 #include "userprog/exception.h"
 #include <inttypes.h>
 #include <stdio.h>
+<<<<<<< HEAD
 #include <string.h>
 #include "userprog/gdt.h"
 #include "threads/interrupt.h"
@@ -13,6 +14,14 @@
 #include "vm/frame.h"
 #include "vm/page.h"
 #include "vm/swap.h"
+=======
+#include "userprog/gdt.h"
+#include "threads/interrupt.h"
+#include "threads/thread.h"
+#include <user/syscall.h>
+#include "syscall.h"
+//#include "syscall.c"
+>>>>>>> f9b93c36c52a54dfbfcce5d528f35e7454d9c996
 
 /* Number of page faults processed. */
 static long long page_fault_cnt;
@@ -286,8 +295,16 @@ page_fault (struct intr_frame *f)
   write = (f->error_code & PF_W) != 0;
   user = (f->error_code & PF_U) != 0;
 
+<<<<<<< HEAD
   if (!not_present && write)
     thread_exit ();
+=======
+    /* Handle read-only page case */
+    if (not_present && write) {
+        syscall_exit(-1); // Terminate the process due to writing to read-only page
+        return;
+    }
+>>>>>>> f9b93c36c52a54dfbfcce5d528f35e7454d9c996
 
   /* To implement virtual memory, delete the rest of the function
      body, and replace it with code that brings in the page to
