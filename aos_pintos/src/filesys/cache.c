@@ -1,153 +1,176 @@
 #include "filesys/cache.h"
+#include <debug.h>
+#include <stdio.h>
 #include <stdbool.h>
+#include <stdlib.h>
+#include <string.h>
 #include "cache.h"
+#include "devices/block.h"
 #include "devices/timer.h"
 #include "filesys/filesys.h"
 #include "threads/malloc.h"
 #include "threads/synch.h"
 #include "threads/thread.h"
 
-void init_entry (int index)
+void init_entry(int idx)
 {
-    cache[index].is_free    = true;
-    cache[index].open_cnt   = 0;
-    cache[index].dirty      = false;
-    cache[index].accessed   = false;
+  cache_array[idx].is_free = true;
+  cache_array[idx].open_cnt = 0;
+  cache_array[idx].dirty = false;
+  cache_array[idx].accessed = false;
 }
 
-void cache_init (void)
+void init_cache(void)
 {
-    lock_init (cache_lock);
-    for (int i = 0; i < CACHE_MAX; i++)
-        init_entry (i);
+  int i;
+  lock_init(&cache_lock);
+  for(i = 0; i < CACHE_MAX_SIZE; i++)
+    init_entry(i);
 
-    thread_create ("cache_write_back", 0, periodic_write_func, NULL);
+  thread_create("cache_writeback", 0, func_periodic_writer, NULL);
 }
 
-int cache_get_entry(block_sector_t disk_sector)
+int get_cache_entry(block_sector_t disk_sector)
 {
-    for (int i = 0; i < CACHE_MAX; i++)
+  int i;
+  for(i = 0; i < CACHE_MAX_SIZE; i++) {
+    if(cache_array[i].disk_sector == disk_sector)
     {
-        if (disk_sector == cache[i].disk_sector)
+      if(!cache_array[i].is_free)
+      {
+        return i;
+      }
+    }
+  }
+    
+  return -1;
+}
+
+int get_free_entry(void)
+{
+  int i;
+  for(i = 0; i < CACHE_MAX_SIZE; i++)
+  {
+    if(cache_array[i].is_free == true)
+    {
+      cache_array[i].is_free = false;
+      return i;
+    }
+  }
+
+  return -1;
+}
+
+int access_cache_entry(block_sector_t disk_sector, bool dirty)
+{
+  lock_acquire(&cache_lock);
+  
+  int idx = get_cache_entry(disk_sector);
+  if(idx == -1)
+    idx = replace_cache_entry(disk_sector, dirty);
+  else
+  {
+    cache_array[idx].open_cnt++;
+    cache_array[idx].accessed = true;
+    cache_array[idx].dirty |= dirty;
+  }
+
+  lock_release(&cache_lock);
+  return idx;
+}
+
+int replace_cache_entry(block_sector_t disk_sector, bool dirty)
+{
+  int idx = get_free_entry();
+  int i = 0;
+  if(idx == -1) //cache is full
+  {
+    for(i = 0; ; i = (i + 1) % CACHE_MAX_SIZE)
+    {
+          //cache is in use
+      if(cache_array[i].open_cnt > 0)
+        continue;
+
+          //second chance
+      if(cache_array[i].accessed == true)
+        cache_array[i].accessed = false;
+
+      //evict it
+      else
+      {
+        //write back
+        if(cache_array[i].dirty == true)
         {
-            if (!cache[i].is_free)
-                return i;
+          block_write(fs_device, cache_array[i].disk_sector,
+            &cache_array[i].block);
+        }
+
+        init_entry(i);
+        idx = i;
+        break;
+      }
+    }
+  }
+
+  cache_array[idx].disk_sector = disk_sector;
+  cache_array[idx].is_free = false;
+  cache_array[idx].open_cnt++;
+  cache_array[idx].accessed = true;
+  cache_array[idx].dirty = dirty;
+  block_read(fs_device, cache_array[idx].disk_sector, &cache_array[idx].block);
+
+  return idx;
+}
+
+void func_periodic_writer(void *aux UNUSED)
+{
+    while(true)
+    {
+        timer_sleep(4 * TIMER_FREQ);
+        write_back(false);
+    }
+}
+
+void write_back(bool clear)
+{
+    int i;
+    lock_acquire(&cache_lock);
+
+    for(i = 0; i < CACHE_MAX_SIZE; i++)
+    {
+        if(cache_array[i].dirty == true)
+        {
+            block_write(fs_device, cache_array[i].disk_sector, &cache_array[i].block);
+            cache_array[i].dirty = false;
+        }
+
+        // clear cache line (filesys done)
+        if(clear) {
+          init_entry(i);
         }
     }
 
-    return -1;
+    lock_release(&cache_lock);
 }
 
-int cahce_get_available (void)
+void func_read_ahead(void *aux)
 {
-    for (int i = 0; i < CACHE_MAX; i++)
-    {
-        if (cache[i].is_free)
-        {
-            cache[i].is_free = false;
-            return i;
-        }
-    }
+    block_sector_t disk_sector = *(block_sector_t *)aux;
+    lock_acquire(&cache_lock);
 
-    return -1;
+    int idx = get_cache_entry(disk_sector);
+
+    // need eviction
+    if (idx == -1)
+        replace_cache_entry(disk_sector, false);
+    
+    lock_release(&cache_lock);
+    free(aux);
 }
 
-int cache_access_entry (block_sector_t disk_sector, bool dirty)
+void ahead_reader(block_sector_t disk_sector)
 {
-    lock_acquire (&cache_lock);
-
-    int index = cache_get_entry (disk_sector);
-    if (-1 == index)
-        index = cache_replace_entry (disk_sector, dirty);
-    else
-    {
-        cache[index].open_cnt++;
-        cache[index].accessed    = true;
-        cache[index].dirty      |= dirty;
-    }
-
-    lock_release (&cache_lock);
-    return index;
-}
-
-int cache_replace_entry (block_sector_t disk_sector, bool dirty)
-{
-    int index = cache_get_available ();
-    if (-1 == index)
-    {
-        for (int i = 0; ; (i + 1) % CACHE_MAX)
-        {
-            if (0 < cache[i].open_cnt)
-                continue;
-
-            if (cache[i].accessed)
-                cache[i].accessed = false;
-            else
-            {
-                if (cache[i].dirty)
-                    block_write (fs_device, cache[i].disk_sector, &cache[i].block);
-
-                init_entry (i);
-                index = i;
-                break;
-            }
-        }
-    }
-
-    cache[index].disk_sector    = disk_sector;
-    cache[index].is_free        = false;
-    cache[index].open_cnt++;
-    cache[index].accessed       = true;
-    cache[index].dirty          = dirty;
-
-    block_read (fs_device, cache[index].disk_sector, &cache[index].block);
-    return index;
-}
-
-void periodic_write_func (void *aux UNUSED)
-{
-    while (1)
-    {
-        timer_sleep (4 * TIMER_FREQ);
-        write_back (false);
-    }
-}
-
-void write_back (bool clear)
-{
-    lock_acquire (&cache_lock);
-    for (int i = 0; i < CACHE_MAX; i++)
-    {
-        if (cache[i].dirty)
-        {
-            block_write (fs_device, cache[i].disk_sector, &cache[i].block);
-            cache[i].dirty = false;
-        }
-
-        if (clear)
-            init_entry (i)
-    }
-
-    lock_release (&cache_lock);
-}
-
-void read_ahead_func (void *aux)
-{
-    block_sector_t disk_sector = *(block_sector_t *) aux;
-    lock_acquire (&cache_lock);
-    int index = cache_get_entry (disk_sector);
-    if (-1 == index)
-        cache_replace_entry (disk_sector, false);
-    lock_release (&cache_lock);
-    free (aux);
-}
-
-void read_ahead (block_sector_t disk_sector)
-{
-    block_sector_t *arg = malloc (sizeof (block_sector_t));
-    if (NULL == arg)
-        return;
-
-    *arg = disk_sector + 1;
-    thread_create ("cache_read_ahead", 0, read_ahead_func, arg);
+    block_sector_t *arg = malloc(sizeof(block_sector_t));
+    *arg = disk_sector + 1;  // next block
+    thread_create("cache_read_ahead", 0, func_read_ahead, arg);
 }

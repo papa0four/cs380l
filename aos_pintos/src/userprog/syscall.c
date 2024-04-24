@@ -299,7 +299,7 @@ int syscall_wait (pid_t pid)
 bool syscall_create (const char *file, unsigned initial_size)
 {
   lock_acquire (&file_system_lock);
-  bool successful = filesys_create (file, initial_size); // from filesys.h
+  bool successful = filesys_create (file, initial_size, false); // from filesys.h
   lock_release (&file_system_lock);
   return successful;
 }

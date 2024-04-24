@@ -6,6 +6,7 @@
 #include <stdint.h>
 #include "synch.h"
 #include "userprog/syscall.h"
+#include "filesys/directory.h"
 
 /* States in a thread's life cycle. */
 enum thread_status
@@ -109,6 +110,10 @@ struct thread
       struct file             *executable;      /* use for denying writes to executables */
       int                     fd;               /* file descriptor */
       tid_t                   parent;           /* id of the parent thread */
+
+      struct dir              *dir;             /* pointer to the threads working dir */
+
+      int64_t waketime;
 
       /* Owned by thread.c. */
       unsigned magic;                     /* Detects stack overflow. */

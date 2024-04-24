@@ -16,6 +16,7 @@
 #include "userprog/process.h"
 #include "userprog/syscall.h"
 #endif
+#include "filesys/directory.h"
 
 /* Random value for struct thread's `magic' member.
    Used to detect stack overflow.  See the big comment at the top
@@ -212,6 +213,11 @@ thread_create (const char *name, int priority,
   t->parent = thread_tid ();
   struct child_process *child = child_process_insert (t->tid);
   t->child = child;
+
+  if (thread_current ()->dir)
+    t->dir = dir_reopen (thread_current ()->dir);
+  else
+   t->dir = NULL;
   /* End User Implementation */
 
   /* Add to run queue. */
@@ -494,6 +500,8 @@ init_thread (struct thread *t, const char *name, int priority)
   t->executable = NULL;     // initialize file pointer to NULL
   t->parent     = -1;       // no parent exists at initialization
   t->fd         = 2;        // minimum file descriptor is 2 (0 = IN/1 = OUT)
+
+  t->dir        = NULL;
   /* End user implementation*/
 }
 
