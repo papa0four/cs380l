@@ -27,7 +27,7 @@ void filesys_init (bool format)
 
   inode_init ();
 
-  init_cache ();
+  cache_init ();
 
   free_map_init ();
 
