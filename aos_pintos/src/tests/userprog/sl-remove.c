@@ -20,6 +20,8 @@ void test_main (void)
   else
     msg ("symlink() successfully returned 0");
 
+  close (target_fd);
+  msg ("closed \"test.txt\"");
   CHECK (remove (target), "remove \"test.txt\" file");
   CHECK (open ("test-link.txt") == -1, "open \"test-link.txt\" should fail");
 }
