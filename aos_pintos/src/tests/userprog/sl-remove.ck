@@ -7,6 +7,7 @@ check_expected ([<<'EOF']);
 (sl-remove) create "test.txt"
 (sl-remove) open "test.txt"
 (sl-remove) symlink() successfully returned 0
+(sl-remove) closed "test.txt"
 (sl-remove) remove "test.txt" file
 (sl-remove) open "test-link.txt" should fail
 (sl-remove) end
