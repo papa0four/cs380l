@@ -34,4 +34,7 @@ bool filesys_remove (const char *name);
 /* Symbolic link creation */
 bool filesys_symlink (char *target, char *linkpath);
 
+/* User Implemented chdir */
+bool filesys_chdir (const char *name);
+
 #endif /* filesys/filesys.h */

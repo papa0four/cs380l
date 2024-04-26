@@ -91,6 +91,10 @@ static void inode_release (struct inode *inode);
 static void handle_direct (struct inode **inode, size_t *sectors);
 static void handle_indirect (struct inode **inode, size_t *sectors);
 static void handle_dbl_indirect (struct inode **inode, size_t *sectors);
+static void free_direct (struct inode **inode, size_t *sector, size_t *index);
+static void free_indirect (struct inode *inode, size_t *sector, size_t *index);
+static void free_dbl_indirect (struct inode *inode, size_t *sector);
+
 
 /* Returns the block device sector that contains byte offset POS
    within INODE.
@@ -565,42 +569,39 @@ static off_t inode_extend (struct inode *inode, off_t length)
   return length;
 }
 
-static void inode_release (struct inode *inode)
+static void free_direct (struct inode **inode, size_t *sector, size_t *index)
 {
-  size_t sector_num = bytes_to_sectors(inode->length);
-  size_t idx = 0;
-  
-  if (0 == sector_num)
-    return;
-
-  /* Free direct blocks (index < 4) */
-  while ((DIRECT_BLOCKS > idx) && (0 != sector_num))
+  if ((DIRECT_BLOCKS > *index) && (0 < *sector))
   {
-    free_map_release (inode->blocks[idx], 1);
-    sector_num--;
-    idx++;
+    free_map_release ((*inode)->blocks[*index], 1);
+    (*sector)--;
+    (*index)++;
   }
+}
 
-  /* Free indirect blocks (index < 13) */
+static void free_indirect (struct inode *inode, size_t *sector, size_t *index)
+{
   while ((DIRECT_BLOCKS <= inode->direct_idx) && 
-        ((DIRECT_BLOCKS + INDIRECT_BLOCKS) > idx) &&
-        (0 != sector_num))
+        ((DIRECT_BLOCKS + INDIRECT_BLOCKS) > *index) &&
+        (0 != *sector))
   {
-    size_t free_blocks = sector_num < SECTORS_PER_IBLOCK ?  sector_num : SECTORS_PER_IBLOCK;
+    size_t free_blocks = *sector < SECTORS_PER_IBLOCK ?  *sector : SECTORS_PER_IBLOCK;
     block_sector_t block[SECTORS_PER_IBLOCK];
-    block_read(fs_device, inode->blocks[idx], &block);
+    block_read(fs_device, inode->blocks[*index], &block);
 
     for (size_t i = 0; i < free_blocks; i++)
     {
       free_map_release (block[i], 1);
-      sector_num--;
+      (*sector)--;
     }
 
-    free_map_release (inode->blocks[idx], 1);
-    idx++;
+    free_map_release (inode->blocks[*index], 1);
+    (*index)++;
   }
+}
 
-  /* Free double indirect blocks (index 13) */
+static void free_dbl_indirect (struct inode *inode, size_t *sector)
+{
   if ((INODE_BLOCKS - 1) == inode->direct_idx)
   {
     block_sector_t level_one[SECTORS_PER_IBLOCK];
@@ -610,11 +611,11 @@ static void inode_release (struct inode *inode)
     block_read (fs_device, inode->blocks[INODE_BLOCKS - 1], &level_one);
 
     /* Calculate # of indirect blocks */
-    size_t indirect_blocks = DIV_ROUND_UP (sector_num, SECTORS_PER_IBLOCK * BLOCK_SECTOR_SIZE);
+    size_t indirect_blocks = DIV_ROUND_UP (*sector, SECTORS_PER_IBLOCK * BLOCK_SECTOR_SIZE);
 
     for (size_t i = 0; i < indirect_blocks; i++)
     {
-      size_t free_blocks = sector_num < SECTORS_PER_IBLOCK ? sector_num : SECTORS_PER_IBLOCK;
+      size_t free_blocks = *sector < SECTORS_PER_IBLOCK ? *sector : SECTORS_PER_IBLOCK;
       
       /* Read second level block */
       block_read (fs_device, level_one[i], &level_two);
@@ -623,7 +624,7 @@ static void inode_release (struct inode *inode)
       {
         /* Free sectors */
         free_map_release (level_two[j], 1);
-        sector_num--;
+        (*sector)--;
       }
 
       /* Free second level block */
@@ -633,6 +634,24 @@ static void inode_release (struct inode *inode)
     /* Free first level block */
     free_map_release (inode->blocks[INODE_BLOCKS - 1], 1);
   }
+}
+
+static void inode_release (struct inode *inode)
+{
+  size_t sector_num = bytes_to_sectors(inode->length);
+  size_t idx = 0;
+  
+  if (0 == sector_num)
+    return;
+
+  /* Free direct blocks (index < 4) */
+  free_direct (&inode, &sector_num, &idx);
+
+  /* Free indirect blocks (index < 13) */
+  free_indirect (inode, &sector_num, &idx);
+
+  /* Free double indirect blocks (index 13) */
+  free_dbl_indirect (inode, &sector_num);
 }
 
 bool inode_is_dir (const struct inode *inode) { return inode->is_dir; }

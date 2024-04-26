@@ -40,6 +40,7 @@ void syscall_seek (int fd, unsigned position);
 unsigned syscall_tell (int fd);
 void syscall_close (int fd);
 bool syscall_symlink (const char *target, const char *linkpath);
+bool syscall_chdir (char *pathname);
 void validate_ptr (const void *vaddr);
 void validate_str (const void *str);
 void validate_buffer (const void *buf, unsigned size);
@@ -68,8 +69,10 @@ syscall_handler (struct intr_frame *f)
   int argv[MAX_ARGS] = { 0 };
   int esp = translate_vaddr ((const void *) f->esp);
 
+  bool success    = false;
   char *target    = NULL;
   char *linkpath  = NULL;
+  char *pathname  = NULL;
   
   switch (* (int *) esp)
   {
@@ -184,15 +187,36 @@ syscall_handler (struct intr_frame *f)
       syscall_close(argv[0]);
       break;
     
-     case SYS_SYMLINK:
+    case SYS_SYMLINK:
       /* Populate arguments from stack using WORD_SZ pointer arithmetic */
       target    = *(char **)((char*)f->esp + 4);
       linkpath  = *(char **)((char*)f->esp + 8);
       /* call symlink helper function to create symbolic link */
-      bool success = syscall_symlink (target, linkpath);
+      success = syscall_symlink (target, linkpath);
       /* Set return value to success or -1 on failure*/
       f->eax = success ? 0 : -1;
       break;
+
+    case SYS_CHDIR:
+      pathname = *(char **)((char*)f->esp + 4);
+      success = syscall_chdir (pathname);
+      f->eax = success ? 0 : -1;
+      break;
+
+    case SYS_MKDIR:
+      break;
+
+    case SYS_READDIR:
+      break;
+
+    case SYS_ISDIR:
+      break;
+
+    case SYS_INUMBER:
+      break;
+
+    case SYS_STAT:
+      break;    
       
     default:
       f->eax = ERROR;
@@ -517,6 +541,17 @@ bool syscall_symlink (const char *target, const char *linkpath)
   return success;
 }
 
+bool syscall_chdir (char *pathname)
+{
+  // if (!is_user_vaddr (pathname))
+  //   return false;
+
+  if (NULL == pathname)
+    return false;
+
+  bool success = filesys_chdir(pathname);
+  return success;
+}
 
 /* validate_ptr:
  * @brief - a function to check if pointer is valid based upon the known user virtual memory space.
