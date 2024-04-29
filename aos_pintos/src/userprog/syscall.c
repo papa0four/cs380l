@@ -82,6 +82,7 @@ syscall_handler (struct intr_frame *f)
   char *target    = NULL;
   char *linkpath  = NULL;
   char *pathname  = NULL;
+  int  fd         = 0;
   
   switch (* (int *) esp)
   {
@@ -222,8 +223,7 @@ syscall_handler (struct intr_frame *f)
       /* Populate argv with required arguments */
       get_args (f, &argv[0], ARG2);
       /* Execute command */
-      success = syscall_readdir (argv[0], (char *)argv[1]);
-      f->eax = success;
+      f->eax = syscall_readdir (argv[0], (char *)argv[1]);
       break;
 
     case SYS_ISDIR:
@@ -651,9 +651,6 @@ bool syscall_chdir (char *pathname)
   if (!is_user_vaddr (pathname))
     return false;
 
-  if (NULL == pathname)
-    return false;
-
   bool success = filesys_chdir(pathname);
   return success;
 
@@ -671,6 +668,7 @@ bool syscall_mkdir (char *pathname)
 
 bool syscall_readdir (int fd, char *pathname)
 {
+  // printf ("PATHNAME: %s\n", pathname);
   if (!is_user_vaddr (pathname))
     return false;
 
@@ -902,7 +900,7 @@ struct file *file_get (int fd)
   struct list_elem* e = list_begin (&t->file_list);
   if (NULL == e)
   {
-    process_file_close (fd);
+   process_file_close (fd);
     return NULL;
   }
   
@@ -944,11 +942,11 @@ void process_file_close (int fd)
     struct process_file *process_file_ptr = list_entry (e, struct process_file, elem);
     if (NULL == process_file_ptr)
       /* list_entry does not find process_file */
-      return;
+      break;
 
     struct inode *inode = file_get_inode (process_file_ptr->file);
     if (NULL == inode)
-      return;
+      break;
     
     if (inode_is_dir (inode))
     {
@@ -957,7 +955,7 @@ void process_file_close (int fd)
       free (process_file_ptr);
 
       if (FD_CLOSE_ALL != fd)
-        return;
+        break;
     }
     else if ((fd == process_file_ptr->fd) || (FD_CLOSE_ALL == fd))
     {

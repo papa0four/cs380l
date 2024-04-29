@@ -199,6 +199,8 @@ static void do_format (void)
 /* User implemented filesys_chdir */
 bool filesys_chdir (const char *pathname)
 {
+  ASSERT (NULL != pathname);
+  
   struct dir *dir = resolve_dir_from_path (pathname);
   char *filename = resolve_name_from_path (pathname);
   struct inode *inode = NULL;
@@ -261,11 +263,11 @@ int filesys_stat (const char *pathname, struct stat *st)
   {
     if (dir_lookup (dir, pathname, &inode))
     {
-      st->logical_size = inode_length (inode);
+      st->logical_size  = inode_length (inode);
       st->physical_size = inode_get_physical_size (inode);
-      st->inode_number = inode_get_inumber (inode);
-      st->blocks = inode_get_block_cnt (inode);
-      st->is_dir = inode_is_dir (inode);
+      st->inode_number  = inode_get_inumber (inode);
+      st->blocks        = inode_get_block_cnt (inode);
+      st->is_dir        = inode_is_dir (inode);
 
       inode_close (inode);
       dir_close (dir);

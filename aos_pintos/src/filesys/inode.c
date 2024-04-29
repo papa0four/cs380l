@@ -172,22 +172,23 @@ bool inode_create (block_sector_t sector, off_t length, bool is_dir, bool is_sym
   ASSERT (BLOCK_SECTOR_SIZE == sizeof (*disk_inode));
 
   disk_inode = calloc (1, sizeof (*disk_inode));
-  if (NULL == disk_inode)
-    return success;
-
-  /* Set disk inode members */
-  disk_inode->length = length;
-  disk_inode->magic = INODE_MAGIC;
-  disk_inode->is_dir = is_dir;
-  disk_inode->is_symlink = is_symlink;
-  disk_inode->parent = ROOT_DIR_SECTOR;
-  if (inode_allocate (disk_inode)) 
+  if (disk_inode)
   {
-    block_write (fs_device, sector, disk_inode);
-    success = true; 
-  }
+    /* Set disk inode members */
+    disk_inode->length      = length;
+    disk_inode->magic       = INODE_MAGIC;
+    disk_inode->is_dir      = is_dir;
+    disk_inode->is_symlink  = is_symlink;
+    disk_inode->parent      = ROOT_DIR_SECTOR;
+    if (inode_allocate (disk_inode)) 
+    {
+      block_write (fs_device, sector, disk_inode);
+      success = true; 
+    }
 
-  free (disk_inode);
+    free (disk_inode);
+  }
+  
   return success;
 }
 
@@ -227,7 +228,7 @@ struct inode *inode_open (block_sector_t sector)
   lock_init (&inode->lock);
 
   /* Copy disk data to inode */
-  block_read(fs_device, inode->sector, &disk_inode);
+  block_read (fs_device, inode->sector, &disk_inode);
   inode->length           = disk_inode.length;
   inode->read_length      = disk_inode.length;
   inode->direct_idx       = disk_inode.direct_idx;
@@ -357,6 +358,7 @@ off_t inode_write_at (struct inode *inode, const void *buffer_, off_t size,
 {
   const uint8_t *buffer = buffer_;
   off_t bytes_written = 0;
+  
 
   if (inode->deny_write_cnt)
     return 0;
@@ -396,12 +398,14 @@ off_t inode_write_at (struct inode *inode, const void *buffer_, off_t size,
     cache_array[cache_idx].accessed = true;
     cache_array[cache_idx].dirty    = true;
     cache_array[cache_idx].open_cnt--;
+    
 
     /* Advance. */
     size          -= chunk_size;
     offset        += chunk_size;
     bytes_written += chunk_size;
   }
+
 
   inode->read_length = inode_length (inode);
   return bytes_written;
@@ -445,10 +449,10 @@ void inode_set_symlink (struct inode *inode, bool is_symlink)
 static bool inode_allocate (struct inode_disk *disk_inode)
 {
   struct inode inode;
-  inode.length       = 0;
-  inode.direct_idx   = 0;
-  inode.indirect_idx = 0;
-  inode.d_indirect_idx = 0;
+  inode.length          = 0;
+  inode.direct_idx      = 0;
+  inode.indirect_idx    = 0;
+  inode.d_indirect_idx  = 0;
 
   inode_extend (&inode, disk_inode->length);
   disk_inode->direct_idx     = inode.direct_idx;
@@ -568,6 +572,8 @@ static off_t inode_extend (struct inode *inode, off_t length)
 
   /* Handle double indirect blocks (index == 14) */
   handle_dbl_indirect (&inode, &grow_sectors);
+
+  inode->length = length;
   
   return length;
 }
@@ -577,6 +583,7 @@ static void free_direct (struct inode **inode, size_t *sector, size_t *index)
   if ((DIRECT_BLOCKS > *index) && (0 < *sector))
   {
     free_map_release ((*inode)->blocks[*index], 1);
+    (*inode)->blocks[*index] = 0;
     (*sector)--;
     (*index)++;
   }
@@ -595,10 +602,12 @@ static void free_indirect (struct inode *inode, size_t *sector, size_t *index)
     for (size_t i = 0; i < free_blocks; i++)
     {
       free_map_release (block[i], 1);
+      block[i] = 0;
       (*sector)--;
     }
 
     free_map_release (inode->blocks[*index], 1);
+    inode->blocks[*index] = 0;
     (*index)++;
   }
 }
@@ -627,15 +636,21 @@ static void free_dbl_indirect (struct inode *inode, size_t *sector)
       {
         /* Free sectors */
         free_map_release (level_two[j], 1);
+        level_two[j] = 0;
         (*sector)--;
       }
 
       /* Free second level block */
       free_map_release (level_one[i], 1);
+      level_one[i] = 0;
     }
+
+    if (0 < indirect_blocks)
+      block_write (fs_device, inode->blocks[INODE_BLOCKS - 1], &level_one);
 
     /* Free first level block */
     free_map_release (inode->blocks[INODE_BLOCKS - 1], 1);
+    inode->blocks[INODE_BLOCKS - 1] = 0;
   }
 }
 
@@ -643,7 +658,7 @@ static void inode_release (struct inode *inode)
 {
   size_t sector_num = bytes_to_sectors(inode->length);
   size_t idx = 0;
-  
+
   if (0 == sector_num)
     return;
 

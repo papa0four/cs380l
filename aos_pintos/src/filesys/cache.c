@@ -25,7 +25,10 @@ void cache_init (void)
 {
   lock_init (&cache_lock);
   for (int i = 0; i < CACHE_MAX_SIZE; i++)
+  {
+    cache_array[i].block[i] = 0;
     init_entry (i);
+  }
 
   thread_create ("cache_writeback", 0, periodic_write_func, NULL);
 }
@@ -119,7 +122,7 @@ void periodic_write_func (void *aux UNUSED)
 {
   while (true)
   {
-    timer_sleep (2 * TIMER_FREQ);
+    timer_sleep (TIMER_FREQ);
     write_back (false);
   }
 }

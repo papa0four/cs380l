@@ -4,6 +4,7 @@
 #include <stdbool.h>
 #include <list.h>
 #include "filesys.h"
+#include "filesys/file.h"
 #include "filesys/filesys.h"
 #include "filesys/inode.h"
 #include "threads/malloc.h"
@@ -235,6 +236,9 @@ done:
    contains no more entries. */
 bool dir_readdir (struct dir *dir, char name[NAME_MAX + 1])
 {
+  ASSERT (NULL != dir);
+  ASSERT (NULL != name);
+
   struct dir_entry e;
   /* Add lock for synchronization */
   inode_lock (dir_get_inode (dir));
