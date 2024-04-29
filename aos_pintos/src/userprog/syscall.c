@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdbool.h>
 #include <syscall-nr.h>
+#include <string.h>
 #include "syscall.h"
 #include "threads/interrupt.h"
 #include "threads/thread.h"
@@ -15,12 +16,15 @@
 #include "devices/shutdown.h"
 #include "filesys/file.h"
 #include "filesys/filesys.h"
+#include "filesys/inode.h"
 
 #define ARG1      1
 #define ARG2      2
 #define ARG3      3
 #define MAX_ARGS  3
 #define WORD_SZ   4
+
+#define PATH_MAX 256
 
 typedef int pid_t;
 
@@ -41,6 +45,11 @@ unsigned syscall_tell (int fd);
 void syscall_close (int fd);
 bool syscall_symlink (const char *target, const char *linkpath);
 bool syscall_chdir (char *pathname);
+bool syscall_mkdir (char *pathname);
+bool syscall_readdir (int fd, char *pathname);
+bool syscall_isdir (int fd);
+int syscall_inumber (int fd);
+int syscall_stat (const char *pathname, void *buf);
 void validate_ptr (const void *vaddr);
 void validate_str (const void *str);
 void validate_buffer (const void *buf, unsigned size);
@@ -200,22 +209,38 @@ syscall_handler (struct intr_frame *f)
     case SYS_CHDIR:
       pathname = *(char **)((char*)f->esp + 4);
       success = syscall_chdir (pathname);
-      f->eax = success ? 0 : -1;
+      f->eax = success;
       break;
 
     case SYS_MKDIR:
+      pathname = *(char **)((char*)f->esp + 4);
+      success = syscall_mkdir (pathname);
+      f->eax = success;
       break;
 
     case SYS_READDIR:
+      /* Populate argv with required arguments */
+      get_args (f, &argv[0], ARG2);
+      /* Execute command */
+      success = syscall_readdir (argv[0], (char *)argv[1]);
+      f->eax = success;
       break;
 
     case SYS_ISDIR:
+      get_args (f, &argv[0], ARG1);
+      success = syscall_isdir (argv[0]);
+      f->eax = success;
       break;
 
     case SYS_INUMBER:
+      get_args (f, &argv[0], ARG1);
+      f->eax = syscall_inumber (argv[0]);
       break;
 
     case SYS_STAT:
+      get_args (f, &argv[0], ARG2);
+      success = syscall_stat ((const char *) argv[0], (void *) argv[1]);
+      f->eax = success ? 0 : -1;
       break;    
       
     default:
@@ -263,14 +288,45 @@ void syscall_halt (void)
 void syscall_exit (int status)
 {
   struct thread *cur = thread_current ();
+  struct list_elem *e;
+
   if ((thread_alive(cur->parent)) && (cur->child))
   {
-    if (status < 0)
+    if (0 > status)
       status = -1;
     
     cur->child->status = status;
   }
+
   printf ("%s: exit(%d)\n", cur->name, status);
+
+  while (!list_empty (&cur->file_list))
+  {
+    e = list_pop_front (&cur->file_list);
+    struct process_file *pf = list_entry (e, struct process_file, elem);
+    struct inode *inode = file_get_inode (pf->file);
+    if ((NULL == pf) || (NULL == inode))
+      continue;
+
+    if (inode_is_dir (inode))
+      dir_close ((struct dir *) pf->file);
+    else
+    {
+      if (pf->file->deny_write)
+        file_allow_write (pf->file);
+
+      file_close (pf->file);
+    }
+
+    free (pf);
+  }
+
+  if (cur->dir)
+  {
+    dir_close (cur->dir);
+    cur->dir = NULL;
+  }
+
   thread_exit ();
 }
 
@@ -376,6 +432,13 @@ int syscall_filesize (int fd)
     lock_release (&file_system_lock);
     return ERROR;
   }
+
+  if (inode_is_dir (file_get_inode (file_ptr)))
+  {
+    lock_release (&file_system_lock);
+    return ERROR;
+  }
+
   int fsize = file_length (file_ptr); // from file.h
   lock_release (&file_system_lock);
   return fsize;
@@ -420,6 +483,20 @@ int syscall_read (int fd, void *buffer, unsigned size)
     lock_release (&file_system_lock);
     return ERROR;
   }
+
+  struct inode *inode = file_get_inode (file_ptr);
+  if (NULL == inode)
+  {
+    lock_release (&file_system_lock);
+    return ERROR;
+  }
+
+  if (inode_is_dir (inode))
+  {
+    lock_release (&file_system_lock);
+    return ERROR;
+  }
+
   int bytes_read = file_read (file_ptr, buffer, size); // from file.h
   lock_release (&file_system_lock);
   return bytes_read;
@@ -459,6 +536,20 @@ int syscall_write (int fd, const void * buffer, unsigned size)
     lock_release (&file_system_lock);
     return ERROR;
   }
+
+  struct inode *inode = file_get_inode (file_ptr);
+  if (NULL == inode)
+  {
+    lock_release (&file_system_lock);
+    return ERROR;
+  }
+
+  if (inode_is_dir (inode))
+  {
+    lock_release (&file_system_lock);
+    return ERROR;
+  }
+
   int bytes_written = file_write (file_ptr, buffer, size); // file.h
   lock_release (&file_system_lock);
   return bytes_written;
@@ -479,6 +570,13 @@ void syscall_seek (int fd, unsigned position)
     lock_release (&file_system_lock);
     return;
   }
+
+  if (inode_is_dir (file_get_inode (file_ptr)))
+  {
+    lock_release (&file_system_lock);
+    return;
+  }
+
   file_seek (file_ptr, position);
   lock_release (&file_system_lock);
 }
@@ -497,6 +595,13 @@ unsigned syscall_tell (int fd)
     lock_release (&file_system_lock);
     return ERROR;
   }
+
+  if (inode_is_dir (file_get_inode (file_ptr)))
+  {
+    lock_release (&file_system_lock);
+    return ERROR;
+  }
+
   off_t offset = file_tell (file_ptr); //from file.h
   lock_release (&file_system_lock);
   return offset;
@@ -543,14 +648,92 @@ bool syscall_symlink (const char *target, const char *linkpath)
 
 bool syscall_chdir (char *pathname)
 {
-  // if (!is_user_vaddr (pathname))
-  //   return false;
+  if (!is_user_vaddr (pathname))
+    return false;
 
   if (NULL == pathname)
     return false;
 
   bool success = filesys_chdir(pathname);
   return success;
+
+  return true;
+}
+
+bool syscall_mkdir (char *pathname)
+{
+  if (!is_user_vaddr (pathname))
+    return false;
+
+  bool success = filesys_create (pathname, 0, true);
+  return success;
+}
+
+bool syscall_readdir (int fd, char *pathname)
+{
+  if (!is_user_vaddr (pathname))
+    return false;
+
+  struct file *file = file_get (fd);
+  if (NULL == file)
+    return false;
+
+  struct inode *inode = file_get_inode (file);
+  if (NULL == inode)
+    return false;
+
+  if (!inode_is_dir (inode))
+    return false;
+
+  struct dir *dir = (struct dir *) file;
+  if (!dir_readdir (dir, pathname))
+    return false;
+
+  return true;
+}
+
+bool syscall_isdir (int fd)
+{
+  struct file *file = file_get (fd);
+  if (NULL == file)
+    return false;
+
+  struct inode *inode = file_get_inode (file);
+  if (NULL == inode)
+    return false;
+
+  if (!inode_is_dir (inode))
+    return false;
+
+  return true;
+}
+
+int syscall_inumber (int fd)
+{
+  struct file *file = file_get (fd);
+  if (NULL == file)
+    return ERROR;
+
+  struct inode *inode = file_get_inode (file);
+  if (NULL == inode)
+    return ERROR;
+
+  block_sector_t inumber = inode_get_inumber (inode);
+  return inumber;
+}
+
+int syscall_stat (const char *pathname, void *buf)
+{
+  if ((!is_user_vaddr (pathname)) || (!is_user_vaddr (buf)))
+    return -1;
+
+  struct stat st;
+  int result = filesys_stat (pathname, &st);
+  if (result)
+    memcpy (buf, &st, sizeof (struct stat));
+  
+  // printf ("value of result :%d\n", result);
+  return result;
 }
 
 /* validate_ptr:
@@ -763,7 +946,20 @@ void process_file_close (int fd)
       /* list_entry does not find process_file */
       return;
 
-    if ((fd == process_file_ptr->fd) || (FD_CLOSE_ALL == fd))
+    struct inode *inode = file_get_inode (process_file_ptr->file);
+    if (NULL == inode)
+      return;
+    
+    if (inode_is_dir (inode))
+    {
+      dir_close ((struct dir *) process_file_ptr->file);
+      list_remove (&process_file_ptr->elem);
+      free (process_file_ptr);
+
+      if (FD_CLOSE_ALL != fd)
+        return;
+    }
+    else if ((fd == process_file_ptr->fd) || (FD_CLOSE_ALL == fd))
     {
       file_close (process_file_ptr->file);
       list_remove (&process_file_ptr->elem);

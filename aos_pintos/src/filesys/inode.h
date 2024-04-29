@@ -24,8 +24,14 @@ void inode_set_symlink (struct inode *inode, bool is_symlink);
 
 bool inode_is_dir (const struct inode *);
 int inode_get_open_cnt (const struct inode *);
+// size_t inode_get_used_cnt (const struct inode *);
 block_sector_t inode_get_parent (const struct inode *);
 bool inode_set_parent (block_sector_t parent, block_sector_t child);
+
+void set_total_sectors (size_t sectors);
+bool is_valid_sector (block_sector_t sector);
+size_t inode_get_physical_size (const struct inode *inode);
+size_t inode_get_block_cnt (const struct inode *inode);
 void inode_lock (const struct inode *inode);
 void inode_unlock (const struct inode *inode);
 

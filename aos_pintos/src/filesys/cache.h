@@ -20,7 +20,7 @@ struct disk_cache {
 };
 
 struct lock cache_lock;
-struct disk_cache cache_array[64];
+struct disk_cache cache_array[CACHE_MAX_SIZE];
 
 void init_entry(int idx);
 void cache_init (void);
@@ -30,7 +30,7 @@ int cache_access_entry (block_sector_t disk_sector, bool dirty);
 int cache_replace_entry (block_sector_t disk_sector, bool dirty);
 void periodic_write_func (void *aux);
 void write_back (bool clear);
-void read_ahead_func (void *aux);
-void read_ahead (block_sector_t);
+// void read_ahead_func (void *aux);
+// void read_ahead (block_sector_t);
 
 #endif /* filesys/cache.h */

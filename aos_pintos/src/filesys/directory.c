@@ -140,10 +140,12 @@ bool dir_add (struct dir *dir, const char *name, block_sector_t inode_sector)
   ASSERT (dir != NULL);
   ASSERT (name != NULL);
 
+  inode_lock (dir_get_inode (dir));
+
   /* Begin user implementation/modification */
   /* Check NAME for validity. */
   if ((*name == '\0') || (strlen (name) > NAME_MAX))
-    return false;
+    goto done;
 
   /* Check that NAME is not in use. */
   if (lookup (dir, name, NULL, NULL))
@@ -165,6 +167,7 @@ bool dir_add (struct dir *dir, const char *name, block_sector_t inode_sector)
     if (!e.in_use)
       break;
 
+
   /* Write slot. */
   e.in_use = true;
   strlcpy (e.name, name, sizeof e.name);
@@ -172,6 +175,7 @@ bool dir_add (struct dir *dir, const char *name, block_sector_t inode_sector)
   success = inode_write_at (dir->inode, &e, sizeof e, ofs) == sizeof e;
 
 done:
+  inode_unlock (dir_get_inode (dir));
   return success;
 }
 

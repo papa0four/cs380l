@@ -149,6 +149,8 @@ static block_sector_t byte_to_sector (const struct inode *inode, off_t length, o
 */
 static struct list open_inodes;
 
+static size_t total_device_sectors = 0;
+
 /* Initializes the inode module. */
 void inode_init (void) { list_init (&open_inodes); }
 
@@ -222,7 +224,7 @@ struct inode *inode_open (block_sector_t sector)
   inode->open_cnt       = 1;
   inode->deny_write_cnt = 0;
   inode->removed        = false;
-  lock_init(&inode->lock);
+  lock_init (&inode->lock);
 
   /* Copy disk data to inode */
   block_read(fs_device, inode->sector, &disk_inode);
@@ -234,7 +236,7 @@ struct inode *inode_open (block_sector_t sector)
   inode->is_dir           = disk_inode.is_dir;
   inode->is_symlink       = disk_inode.is_symlink;
   inode->parent           = disk_inode.parent;
-  memcpy(&inode->blocks, &disk_inode.blocks, INODE_BLOCKS * BLOCK_PTR_SIZE);
+  memcpy (&inode->blocks, &disk_inode.blocks, INODE_BLOCKS * BLOCK_PTR_SIZE);
   return inode;
 }
 
@@ -273,19 +275,21 @@ void inode_close (struct inode *inode)
       free_map_release (inode->sector, 1);
       inode_release (inode);
     }
-
-    disk_inode.length          = inode->length;
-    disk_inode.magic           = INODE_MAGIC;
-    disk_inode.direct_idx      = inode->direct_idx;
-    disk_inode.indirect_idx    = inode->indirect_idx;
-    disk_inode.d_indirect_idx  = inode->d_indirect_idx;
-    disk_inode.is_dir          = inode->is_dir;
-    disk_inode.is_symlink      = inode->is_symlink;
-    disk_inode.parent          = inode->parent;
-
-    memcpy (&disk_inode.blocks, &inode->blocks,
+    else
+    {
+      disk_inode.length          = inode->length;
+      disk_inode.magic           = INODE_MAGIC;
+      disk_inode.direct_idx      = inode->direct_idx;
+      disk_inode.indirect_idx    = inode->indirect_idx;
+      disk_inode.d_indirect_idx  = inode->d_indirect_idx;
+      disk_inode.is_dir          = inode->is_dir;
+      disk_inode.is_symlink      = inode->is_symlink;
+      disk_inode.parent          = inode->parent;
+      memcpy (&disk_inode.blocks, &inode->blocks,
       INODE_BLOCKS * BLOCK_PTR_SIZE);
-    block_write (fs_device, inode->sector, &disk_inode);
+      block_write (fs_device, inode->sector, &disk_inode);
+    }
+
     free (inode); 
   }
 }
@@ -373,8 +377,7 @@ off_t inode_write_at (struct inode *inode, const void *buffer_, off_t size,
   while (0 < size) 
   {
     /* Sector to write, starting byte offset within sector. */
-    block_sector_t sector_idx = byte_to_sector (inode, inode_length (inode),
-      offset);
+    block_sector_t sector_idx = byte_to_sector (inode, inode_length (inode), offset);
     int sector_ofs = offset % BLOCK_SECTOR_SIZE;
 
     /* Bytes left in inode, bytes left in sector, lesser of the two. */
@@ -391,7 +394,7 @@ off_t inode_write_at (struct inode *inode, const void *buffer_, off_t size,
     int cache_idx = cache_access_entry (sector_idx, true);
     memcpy (cache_array[cache_idx].block + sector_ofs, buffer + bytes_written, chunk_size);
     cache_array[cache_idx].accessed = true;
-    cache_array[cache_idx].dirty = true;
+    cache_array[cache_idx].dirty    = true;
     cache_array[cache_idx].open_cnt--;
 
     /* Advance. */
@@ -657,6 +660,33 @@ static void inode_release (struct inode *inode)
 bool inode_is_dir (const struct inode *inode) { return inode->is_dir; }
 
 int inode_get_open_cnt (const struct inode *inode) { return inode->open_cnt; }
+
+void set_total_sectors (size_t sectors) { total_device_sectors = sectors; }
+bool is_valid_sector (block_sector_t sector) { return sector > 0 && sector < total_device_sectors; }
+
+size_t inode_get_physical_size (const struct inode *inode)
+{
+  size_t size = 0;
+  for (size_t i = 0; i < DIRECT_BLOCKS; i++)
+  {
+    if (0 != inode->blocks[i])
+      size += BLOCK_SECTOR_SIZE;
+  }
+
+  return size;
+}
+
+size_t inode_get_block_cnt (const struct inode *inode)
+{
+  size_t count = 0;
+  for (size_t i = 0; i < DIRECT_BLOCKS; i++)
+  {
+    if (0 != inode->blocks[i])
+      count++;
+  }
+
+  return count;
+}
 
 block_sector_t inode_get_parent (const struct inode *inode) { return inode->parent; }
 

@@ -11,18 +11,18 @@ struct file *file_open (struct inode *inode)
 {
   struct file *file = calloc (1, sizeof *file);
   if (inode != NULL && file != NULL)
-    {
-      file->inode = inode;
-      file->pos = 0;
-      file->deny_write = false;
-      return file;
-    }
-  else
-    {
-      inode_close (inode);
-      free (file);
-      return NULL;
-    }
+  {
+    file->inode = inode;
+    file->pos = 0;
+    file->deny_write = false;
+    return file;
+  }
+else
+  {
+    inode_close (inode);
+    free (file);
+    return NULL;
+  }
 }
 
 /* Opens and returns a new file for the same inode as FILE.
@@ -36,11 +36,11 @@ struct file *file_reopen (struct file *file)
 void file_close (struct file *file)
 {
   if (file != NULL)
-    {
-      file_allow_write (file);
-      inode_close (file->inode);
-      free (file);
-    }
+  {
+    file_allow_write (file);
+    inode_close (file->inode);
+    free (file);
+  }
 }
 
 /* Returns the inode encapsulated by FILE. */

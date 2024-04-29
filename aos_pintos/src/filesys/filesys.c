@@ -21,8 +21,7 @@ struct block *fs_device;
 static void do_format (void);
 
 /* User implemented helper functions */
-static char *resolve_name_from_path (const char *pathname);
-static struct dir *resolve_dir_from_path (const char *pathname);
+
 
 /* Initializes the file system module.
    If FORMAT is true, reformats the file system. */
@@ -32,11 +31,12 @@ void filesys_init (bool format)
   if (fs_device == NULL)
     PANIC ("No file system device found, can't initialize file system.");
 
-  inode_init ();
+  size_t total_sectors = block_size (fs_device);
+  set_total_sectors (total_sectors);
 
   /* initialize inode cache */
   cache_init ();
-
+  inode_init ();
   free_map_init ();
 
   if (format)
@@ -76,10 +76,6 @@ bool filesys_create (const char *name, off_t initial_size, bool is_dir)
   char *filename = resolve_name_from_path (name);
   bool success = false;
 
-  if ((NULL == dir) || (NULL == filename))
-    goto done;
-
-  // struct dir *dir = dir_open_root ();
   if ((0 != strcmp (filename, ".")) &&
       (0 != strcmp (filename, "..")))
   {
@@ -89,7 +85,6 @@ bool filesys_create (const char *name, off_t initial_size, bool is_dir)
               (dir_add (dir, filename, inode_sector)));
   }
 
-done:
   if (!success && inode_sector != 0)
     free_map_release (inode_sector, 1);
 
@@ -106,32 +101,7 @@ done:
    or if an internal memory allocation fails. */
 struct file *filesys_open (const char *name)
 {
-  // if (NULL == name)
-  //   return NULL;
-  // struct dir *dir = dir_open_root ();
-  // struct inode *inode = NULL;
-
-  // if (dir != NULL)
-  //   dir_lookup (dir, name, &inode);
-  // dir_close (dir);
-
-  // if (inode == NULL)
-  //   return NULL;
-
-  // if (inode_get_symlink (inode))
-  //   {
-  //     char target[15];
-  //     inode_read_at (inode, target, NAME_MAX + 1, 0);
-  //     struct dir *root = dir_open_root ();
-  //     if (!dir_lookup (root, target, &inode))
-  //       {
-  //         return NULL;
-  //       }
-  //     dir_close (root);
-  //   }
-
-  // return file_open (inode);
-  if (NULL == name)
+  if (0 == strlen (name))
     return NULL;
 
   struct dir *dir = resolve_dir_from_path (name);
@@ -165,20 +135,18 @@ struct file *filesys_open (const char *name)
   if (NULL == inode)
     return NULL;
 
+  if (inode_get_symlink (inode))
+  {
+    char target[15];
+    inode_read_at (inode, target, NAME_MAX + 1, 0);
+    struct dir *root = dir_open_root ();
+    if (!dir_lookup (root, target, &inode))
+      return NULL;
+    dir_close (root);
+  }
+
   if (inode_is_dir (inode))
     return (struct file *) dir_open (inode);
-
-  if (inode_get_symlink (inode))
-    {
-      char target[15];
-      inode_read_at (inode, target, NAME_MAX + 1, 0);
-      struct dir *root = dir_open_root ();
-      if (!dir_lookup (root, target, &inode))
-        {
-          return NULL;
-        }
-      dir_close (root);
-    }
 
   return file_open (inode);
 }
@@ -281,8 +249,37 @@ bool filesys_chdir (const char *pathname)
   return false;
 }
 
+int filesys_stat (const char *pathname, struct stat *st)
+{
+  if (NULL == pathname)
+    return false;
+
+  struct dir *dir = resolve_dir_from_path (pathname);
+  struct inode *inode = NULL;
+
+  if (dir)
+  {
+    if (dir_lookup (dir, pathname, &inode))
+    {
+      st->logical_size = inode_length (inode);
+      st->physical_size = inode_get_physical_size (inode);
+      st->inode_number = inode_get_inumber (inode);
+      st->blocks = inode_get_block_cnt (inode);
+      st->is_dir = inode_is_dir (inode);
+
+      inode_close (inode);
+      dir_close (dir);
+      return true;
+    }
+
+    dir_close (dir);
+  }
+
+  return false;
+}
+
 /* User implemented helper functions */
-static char *resolve_name_from_path (const char *pathname)
+char *resolve_name_from_path (const char *pathname)
 {
   if (NULL == pathname)
     return NULL;
@@ -294,7 +291,7 @@ static char *resolve_name_from_path (const char *pathname)
 
   char *cur   = NULL;
   char *ptr   = NULL;
-  char *prev  = NULL;
+  char *prev  = "";
 
   for (cur = strtok_r (path, "/", &ptr); NULL != cur; cur = strtok_r (NULL, "/", &ptr))
     prev = cur;
@@ -303,13 +300,15 @@ static char *resolve_name_from_path (const char *pathname)
     return NULL;
 
   char *name = malloc (strlen (prev) + 1);
-  // PANIC ("NAME IS NULL: %s\n", NULL == name ? "TRUE\0" : "FALSE\0");
   memcpy (name, prev, strlen (prev) + 1);
   return name;
 }
 
 struct dir *resolve_dir_from_path (const char *pathname)
 {
+  if (NULL == pathname)
+    return NULL;
+
   size_t len = strlen (pathname);
   char path[len + 1]; // NULL terminate
   memcpy (path, pathname, len + 1);
@@ -336,14 +335,10 @@ struct dir *resolve_dir_from_path (const char *pathname)
     {
       inode = dir_get_parent_inode (dir);
       if (NULL == inode)
-      {
         return NULL;
-      }
     }
     else if (!dir_lookup (dir, prev, &inode))
-    {
       return NULL;
-    }
 
     if (inode_is_dir (inode))
     {

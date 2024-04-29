@@ -4,6 +4,7 @@
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdio.h>
 #include "cache.h"
 #include "devices/block.h"
 #include "devices/timer.h"
@@ -77,26 +78,24 @@ int cache_access_entry (block_sector_t disk_sector, bool dirty)
 
 int cache_replace_entry (block_sector_t disk_sector, bool dirty)
 {
+  // lock_acquire (&cache_lock);
   int idx = cache_get_free ();
   if (-1 == idx) //cache is full
   {
     for (int i = 0; ; i = (i + 1) % CACHE_MAX_SIZE)
     {
-      //cache is in use
+      /* Cache entry is in use */
       if (cache_array[i].open_cnt > 0)
         continue;
 
-      //second chance
+      /* Determine if the entry has been accessed */
       if (cache_array[i].accessed)
         cache_array[i].accessed = false;
-
-      //evict it
       else
       {
-        //write back
+        /* If not, evict it if dirty, write to disk */
         if (cache_array[i].dirty)
-          block_write (fs_device, cache_array[i].disk_sector,
-            &cache_array[i].block);
+          block_write (fs_device, cache_array[i].disk_sector, &cache_array[i].block);
 
         init_entry (i);
         idx = i;
@@ -112,54 +111,55 @@ int cache_replace_entry (block_sector_t disk_sector, bool dirty)
   cache_array[idx].dirty = dirty;
   block_read (fs_device, cache_array[idx].disk_sector, &cache_array[idx].block);
 
+  // lock_release (&cache_lock);
   return idx;
 }
 
 void periodic_write_func (void *aux UNUSED)
 {
-    while (true)
-    {
-        timer_sleep (4 * TIMER_FREQ);
-        write_back (false);
-    }
+  while (true)
+  {
+    timer_sleep (2 * TIMER_FREQ);
+    write_back (false);
+  }
 }
 
 void write_back (bool clear)
 {
-    lock_acquire (&cache_lock);
-    for (int i = 0; i < CACHE_MAX_SIZE; i++)
+  lock_acquire (&cache_lock);
+  for (int i = 0; i < CACHE_MAX_SIZE; i++)
+  {
+    if (cache_array[i].dirty)
     {
-        if (cache_array[i].dirty)
-        {
-            block_write (fs_device, cache_array[i].disk_sector, &cache_array[i].block);
-            cache_array[i].dirty = false;
-        }
-
-        // clear cache line (filesys done)
-        if(clear)
-          init_entry (i);
+      block_write (fs_device, cache_array[i].disk_sector, &cache_array[i].block);
+      cache_array[i].dirty = false;
     }
-    lock_release (&cache_lock);
+
+    // clear cache line (filesys done)
+    if(clear)
+      init_entry (i);
+  }
+  lock_release (&cache_lock);
 }
 
-void read_ahead_func (void *aux)
-{
-    block_sector_t disk_sector = *(block_sector_t *)aux;
-    lock_acquire (&cache_lock);
+// void read_ahead_func (void *aux)
+// {
+//   block_sector_t disk_sector = *(block_sector_t *)aux;
+//   lock_acquire (&cache_lock);
 
-    int idx = cache_get_entry (disk_sector);
+//   int idx = cache_get_entry (disk_sector);
 
-    // need eviction
-    if (-1 == idx)
-        cache_replace_entry (disk_sector, false);
-    
-    lock_release (&cache_lock);
-    free (aux);
-}
+//   // need eviction
+//   if (-1 == idx)
+//     cache_replace_entry (disk_sector, false);
 
-void read_ahead (block_sector_t disk_sector)
-{
-    block_sector_t *arg = malloc (sizeof (block_sector_t));
-    *arg = disk_sector + 1;  // next block
-    thread_create ("cache_read_ahead", 0, read_ahead_func, arg);
-}
+//   lock_release (&cache_lock);
+//   free (aux);
+// }
+
+// void read_ahead (block_sector_t disk_sector)
+// {
+//     block_sector_t *arg = malloc (sizeof (block_sector_t));
+//     *arg = disk_sector + 1;  // next block
+//     thread_create ("cache_read_ahead", 0, read_ahead_func, arg);
+// }

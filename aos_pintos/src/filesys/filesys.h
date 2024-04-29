@@ -23,6 +23,9 @@ struct stat
     size_t physical_size;           /* The physical file size of a file. */
     block_sector_t inode_number;    /* The inode number of a file. */
     blkcnt_t blocks;                /* Number of blocks allocated. */
+
+    /* User addition for directories */
+    bool is_dir;
 };
 
 void filesys_init (bool format);
@@ -36,5 +39,8 @@ bool filesys_symlink (char *target, char *linkpath);
 
 /* User Implemented chdir */
 bool filesys_chdir (const char *name);
+char *resolve_name_from_path (const char *pathname);
+struct dir *resolve_dir_from_path (const char *pathname);
+int filesys_stat (const char *pathname, struct stat *st);
 
 #endif /* filesys/filesys.h */
