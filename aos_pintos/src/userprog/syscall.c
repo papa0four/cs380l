@@ -82,7 +82,6 @@ syscall_handler (struct intr_frame *f)
   char *target    = NULL;
   char *linkpath  = NULL;
   char *pathname  = NULL;
-  int  fd         = 0;
   
   switch (* (int *) esp)
   {
@@ -953,6 +952,7 @@ void process_file_close (int fd)
         dir_close ((struct dir *) process_file_ptr->file);
       else
         file_close (process_file_ptr->file);
+      
       list_remove (&process_file_ptr->elem);
       free (process_file_ptr);
 
