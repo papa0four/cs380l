@@ -143,6 +143,7 @@ void write_back (bool clear)
       init_entry (i);
   }
   lock_release (&cache_lock);
+  timer_sleep (TIMER_FREQ);
 }
 
 // void read_ahead_func (void *aux)

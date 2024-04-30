@@ -668,7 +668,6 @@ bool syscall_mkdir (char *pathname)
 
 bool syscall_readdir (int fd, char *pathname)
 {
-  // printf ("PATHNAME: %s\n", pathname);
   if (!is_user_vaddr (pathname))
     return false;
 
@@ -947,19 +946,13 @@ void process_file_close (int fd)
     struct inode *inode = file_get_inode (process_file_ptr->file);
     if (NULL == inode)
       break;
-    
-    if (inode_is_dir (inode))
-    {
-      dir_close ((struct dir *) process_file_ptr->file);
-      list_remove (&process_file_ptr->elem);
-      free (process_file_ptr);
 
-      if (FD_CLOSE_ALL != fd)
-        break;
-    }
-    else if ((fd == process_file_ptr->fd) || (FD_CLOSE_ALL == fd))
+    if ((fd == process_file_ptr->fd) || (FD_CLOSE_ALL == fd))
     {
-      file_close (process_file_ptr->file);
+      if (inode_is_dir (inode))
+        dir_close ((struct dir *) process_file_ptr->file);
+      else
+        file_close (process_file_ptr->file);
       list_remove (&process_file_ptr->elem);
       free (process_file_ptr);
 
